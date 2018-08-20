@@ -79,6 +79,13 @@ FEngine* FEngine::create(Backend backend, ExternalContext* externalContext, void
     // initialize all fields that need an instance of FEngine
     // (this cannot be done safely in the ctor)
 
+    if (!UTILS_HAS_THREADING) {
+        instance->mExternalContext = ExternalContext::create(&instance->mBackend);
+        instance->mDriver = instance->mExternalContext->createDriver(sharedGLContext);
+        instance->init();
+        return instance;
+    }
+
     // start the driver thread
     instance->mDriverThread = std::thread(&FEngine::loop, instance);
 
@@ -153,11 +160,24 @@ FEngine::FEngine(Backend backend, ExternalContext* externalContext, void* shared
     mJobSystem.adopt();
 }
 
+bool FEngine::tick(SwapChain* swapChain) noexcept {
+    ASSERT_PRECONDITION(!UTILS_HAS_THREADING, "Tick is meant only for single-threaded platforms.");
+    ASSERT_PRECONDITION(swapChain, "Swap chain must be created before ticking the engine.");
+    mCommandBufferQueue.flush();
+    auto buffers = mCommandBufferQueue.checkForCommands();
+    for (auto& item : buffers) {
+        if (UTILS_LIKELY(item.begin)) {
+            mCommandStream.execute(item.begin);
+            mCommandBufferQueue.releaseBuffer(item);
+        }
+    }
+    return false;
+}
+
 /*
  * init() is called just after the driver thread is initialized. Driver commands are therefore
  * possible.
  */
-
 void FEngine::init() {
     // this must be first.
     mCommandStream = CommandStream(*mDriver, mCommandBufferQueue.getCircularBuffer());
@@ -225,6 +245,7 @@ void FEngine::init() {
             FMaterial::DefaultMaterialBuilder()
                     .package(DEFAULT_MATERIAL_PACKAGE, DEFAULT_MATERIAL_PACKAGE_SIZE)
                     .build(*const_cast<FEngine*>(this)));
+    mDriverInitialized = true;
 }
 
 FEngine::~FEngine() noexcept {
@@ -875,5 +896,8 @@ DebugRegistry& Engine::getDebugRegistry() noexcept {
     return upcast(this)->getDebugRegistry();
 }
 
+bool Engine::tick(SwapChain* swapChain) noexcept {
+    return upcast(this)->tick(swapChain);
+}
 
 } // namespace filament

@@ -20,6 +20,8 @@
 
 #include <filament/Fence.h>
 
+#include <utils/trap.h>
+
 namespace filament {
 
 using namespace driver;
@@ -67,6 +69,11 @@ FenceStatus FFence::waitAndDestroy(FFence* fence, Mode mode) noexcept {
 UTILS_NOINLINE
 FenceStatus FFence::wait(Mode mode, uint64_t timeout) noexcept {
     FEngine& engine = mEngine;
+
+    if (!UTILS_HAS_THREADING) {
+        utils::debug_trap();
+        return FenceStatus::CONDITION_SATISFIED;
+    }
 
     if (mode == Mode::FLUSH) {
         engine.flush();

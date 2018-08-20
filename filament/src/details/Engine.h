@@ -343,6 +343,8 @@ public:
         return mDebugRegistry;
     }
 
+    bool tick(SwapChain* swapChain) noexcept;
+
 private:
     FEngine(Backend backend, ExternalContext* externalContext, void* sharedGLContext);
     void init();
@@ -360,6 +362,7 @@ private:
             driver::ShaderModel model, PostProcessStage stage) const noexcept;
 
     std::unique_ptr<Driver> mDriver;
+    bool mDriverInitialized = false;
 
     Backend mBackend;
     ExternalContext* mExternalContext = nullptr;

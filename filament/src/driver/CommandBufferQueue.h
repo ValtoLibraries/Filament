@@ -61,6 +61,8 @@ public:
     // wait for commands to be available and returns an array containing these commands
     std::vector<Slice> waitForCommands() const;
 
+    std::vector<Slice> checkForCommands();
+
     // return the memory used by this command buffer to the circular buffer
     // WARNING: releaseBuffer() must be called in sequence of the Slices returned by
     // waitForCommands()

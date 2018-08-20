@@ -76,18 +76,22 @@ void FilamentApp::run(const Config& config,SetupCallback setupCallback,
         size_t width, size_t height) {
     mEngine = Engine::create(config.backend);
 
-      mDepthMaterial = Material::Builder()
-              .package((void*) DEPTH_VISUALIZER_PACKAGE, sizeof(DEPTH_VISUALIZER_PACKAGE))
-              .build(*mEngine);
-
-      mDepthMI = mDepthMaterial->createInstance();
-
-      mTransparentMaterial = Material::Builder()
-              .package((void*) TRANSPARENT_COLOR_PACKAGE, sizeof(TRANSPARENT_COLOR_PACKAGE))
-              .build(*mEngine);
-
     std::unique_ptr<FilamentApp::Window> window(
             new FilamentApp::Window(this, config, config.title, width, height));
+
+    if (!UTILS_HAS_THREADING) {
+        mEngine->tick(window->getSwapChain());
+    }
+
+    mDepthMaterial = Material::Builder()
+            .package((void*) DEPTH_VISUALIZER_PACKAGE, sizeof(DEPTH_VISUALIZER_PACKAGE))
+            .build(*mEngine);
+
+    mDepthMI = mDepthMaterial->createInstance();
+
+    mTransparentMaterial = Material::Builder()
+            .package((void*) TRANSPARENT_COLOR_PACKAGE, sizeof(TRANSPARENT_COLOR_PACKAGE))
+            .build(*mEngine);
 
     std::unique_ptr<Cube> cameraCube(new Cube(*mEngine, mTransparentMaterial, {1,0,0}));
     // we can't cull the light-frustum because it's not applied a rigid transform
@@ -196,6 +200,10 @@ void FilamentApp::run(const Config& config,SetupCallback setupCallback,
     bool mousePressed[3] = { false };
 
     while (!mClosed) {
+
+        if (!UTILS_HAS_THREADING) {
+            mEngine->tick(window->getSwapChain());
+        }
 
         // Allow the app to animate the scene if desired.
         if (mAnimation) {

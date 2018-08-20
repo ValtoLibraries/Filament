@@ -337,6 +337,12 @@ public:
 
     DebugRegistry& getDebugRegistry() noexcept;
 
+    /**
+     * Invokes one iteration of the render loop, used only on single-threaded platforms.
+     * Returns true if the Engine requests termination.
+     */
+    bool tick(SwapChain* swapChain) noexcept;
+
 protected:
     //! \privatesection
     Engine() noexcept = default;

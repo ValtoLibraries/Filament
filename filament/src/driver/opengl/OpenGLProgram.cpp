@@ -21,6 +21,7 @@
 
 #include <utils/Log.h>
 #include <utils/compiler.h>
+#include <utils/trap.h>
 #include <utils/Panic.h>
 
 #include "driver/opengl/OpenGLDriver.h"
@@ -234,9 +235,10 @@ void OpenGLProgram::updateSamplers(OpenGLDriver* gl) noexcept {
 
 void UTILS_NOINLINE OpenGLProgram::logCompilationError(
         io::ostream& out, GLuint shaderId, char const* source) noexcept {
-    char error[512];
+    char error[512] = "GL context is not present.";
     glGetShaderInfoLog(shaderId, sizeof(error), nullptr, error);
     out << "COMPILE ERROR: " << io::endl << error << io::endl;
+    utils::debug_trap();
 
     size_t lc = 1;
     char* shader = strdup(source);

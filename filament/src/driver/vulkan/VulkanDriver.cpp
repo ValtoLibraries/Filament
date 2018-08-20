@@ -324,6 +324,13 @@ void VulkanDriver::createSwapChain(Driver::SwapChainHandle sch, void* nativeWind
     }
 }
 
+Handle<HwSwapChain> VulkanDriver::createSwapChainST(void* nativeWindow, uint64_t flags) {
+    Handle<HwSwapChain> result = createSwapChainSynchronous();
+    createSwapChain(result, nativeWindow, flags);
+    makeCurrent(result);
+    return result;
+}
+
 void VulkanDriver::createStreamFromTextureId(Driver::StreamHandle sh, intptr_t externalTextureId,
         uint32_t width, uint32_t height) {
 }

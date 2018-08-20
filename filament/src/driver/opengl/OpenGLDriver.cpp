@@ -872,6 +872,7 @@ void OpenGLDriver::createUniformBuffer(Driver::UniformBufferHandle ubh, size_t s
 
     GLUniformBuffer* ub = construct<GLUniformBuffer>(ubh, size);
     glGenBuffers(1, &ub->gl.ubo);
+    assert(ub->gl.ubo && "Failed to create UBO, probably due to missing OpenGL context.");
     bindBuffer(GL_UNIFORM_BUFFER, ub->gl.ubo);
     glBufferData(GL_UNIFORM_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
     CHECK_GL_ERROR(utils::slog.e)
@@ -1125,6 +1126,13 @@ void OpenGLDriver::createSwapChain(Driver::SwapChainHandle sch, void* nativeWind
 
     HwSwapChain* sc = construct<HwSwapChain>(sch);
     sc->swapChain = mContextManager.createSwapChain(nativeWindow, flags);
+}
+
+Handle<HwSwapChain> OpenGLDriver::createSwapChainST(void* nativeWindow, uint64_t flags) {
+    Handle<HwSwapChain> result = createSwapChainSynchronous();
+    createSwapChain(result, nativeWindow, flags);
+    makeCurrent(result);
+    return result;
 }
 
 void OpenGLDriver::createStreamFromTextureId(Driver::StreamHandle sh,
