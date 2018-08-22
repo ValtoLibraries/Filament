@@ -310,10 +310,6 @@ DECL_DRIVER_API_SYNCHRONOUS_1(bool, isRenderTargetFormatSupported, Driver::Textu
 
 DECL_DRIVER_API_SYNCHRONOUS_0(bool, isFrameTimeSupported)
 
-DECL_DRIVER_API_SYNCHRONOUS_2(Driver::SwapChainHandle, createSwapChainST,
-        void*, nativeWindow,
-        uint64_t, flags)
-
 /*
  * Updating driver objects
  * -----------------------

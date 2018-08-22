@@ -1128,13 +1128,6 @@ void OpenGLDriver::createSwapChain(Driver::SwapChainHandle sch, void* nativeWind
     sc->swapChain = mContextManager.createSwapChain(nativeWindow, flags);
 }
 
-Handle<HwSwapChain> OpenGLDriver::createSwapChainST(void* nativeWindow, uint64_t flags) {
-    Handle<HwSwapChain> result = createSwapChainSynchronous();
-    createSwapChain(result, nativeWindow, flags);
-    makeCurrent(result);
-    return result;
-}
-
 void OpenGLDriver::createStreamFromTextureId(Driver::StreamHandle sh,
         intptr_t externalTextureId, uint32_t width, uint32_t height) {
     DEBUG_MARKER()

@@ -24,11 +24,7 @@ namespace details {
 FSwapChain::FSwapChain(FEngine& engine, void* nativeWindow, uint64_t flags)
         : mNativeWindow(nativeWindow) {
     mConfigFlags = flags;
-    if (UTILS_HAS_THREADING) {
-        mSwapChain = engine.getDriverApi().createSwapChain(nativeWindow, mConfigFlags);
-    } else {
-        mSwapChain = engine.getDriverApi().createSwapChainST(nativeWindow, mConfigFlags);
-    }
+    mSwapChain = engine.getDriverApi().createSwapChain(nativeWindow, mConfigFlags);
 }
 
 void FSwapChain::terminate(FEngine& engine) noexcept {
