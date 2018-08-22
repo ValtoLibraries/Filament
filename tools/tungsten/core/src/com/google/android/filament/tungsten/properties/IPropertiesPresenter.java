@@ -16,7 +16,10 @@
 
 package com.google.android.filament.tungsten.properties;
 
+import com.google.android.filament.tungsten.model.Node;
+import com.google.android.filament.tungsten.model.PropertyValue;
+
 public interface IPropertiesPresenter {
 
-    void propertyChanged();
+    void propertyChanged(Node node, String propertyName, PropertyValue value);
 }
