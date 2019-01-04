@@ -28,8 +28,8 @@
 #include <filament/driver/DriverEnums.h>
 #include <filament/EngineEnums.h>
 #include <filament/MaterialEnums.h>
-#include <filament/SamplerInterfaceBlock.h>
-#include <filament/UniformInterfaceBlock.h>
+#include <private/filament/SamplerInterfaceBlock.h>
+#include <private/filament/UniformInterfaceBlock.h>
 
 #include <private/filament/Variant.h>
 
@@ -108,6 +108,9 @@ public:
 
     std::ostream& generateGetters(std::ostream& out, ShaderType type) const;
     std::ostream& generateParameters(std::ostream& out, ShaderType type) const;
+
+    static void fixupExternalSamplers(
+            std::string& shader, filament::SamplerInterfaceBlock const& sib) noexcept;
 
 private:
     filament::driver::Precision getDefaultPrecision(ShaderType type) const;

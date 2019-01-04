@@ -26,13 +26,13 @@ namespace filament {
 
 class NoopDriver final : public DriverBase {
     NoopDriver() noexcept;
-    virtual ~NoopDriver() noexcept;
+    ~NoopDriver() noexcept override;
 
 public:
-    static std::unique_ptr<Driver> create();
+    static Driver* create();
 
 private:
-    virtual ShaderModel getShaderModel() const noexcept override final { return ShaderModel::UNKNOWN; }
+    ShaderModel getShaderModel() const noexcept final;
 
     /*
      * Driver interface
@@ -44,8 +44,11 @@ private:
 #define DECL_DRIVER_API(methodName, paramsDecl, params) \
     UTILS_ALWAYS_INLINE void methodName(paramsDecl) { }
 
+    // The only reason we return a non-zero value is so that "isTextureFormatSupported"
+    // returns true, which is necessary because Engine creates an internal 1x1 texture
+    // during its initialization phase.
 #define DECL_DRIVER_API_SYNCHRONOUS(RetType, methodName, paramsDecl, params) \
-    RetType methodName(paramsDecl) override { return RetType(); }
+    RetType methodName(paramsDecl) override { return RetType(true); }
 
 #define DECL_DRIVER_API_RETURN(RetType, methodName, paramsDecl, params) \
     RetType methodName##Synchronous() noexcept override { \

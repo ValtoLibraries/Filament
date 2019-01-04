@@ -17,6 +17,7 @@ set(DIST_HDRS
         ${PUBLIC_HDR_DIR}/${TARGET}/EntityInstance.h
         ${PUBLIC_HDR_DIR}/${TARGET}/EntityManager.h
         ${PUBLIC_HDR_DIR}/${TARGET}/CString.h
+        ${PUBLIC_HDR_DIR}/${TARGET}/unwindows.h
 )
 
 set(SRCS
@@ -35,12 +36,13 @@ set(SRCS
         src/Path.cpp
         src/Profiler.cpp
         src/Systrace.cpp
-        src/linux/futex.cpp
-)
+        )
 if (WIN32)
     list(APPEND SRCS src/win32/Path.cpp)
 endif()
 if (LINUX OR ANDROID)
+    list(APPEND SRCS src/linux/Condition.cpp)
+    list(APPEND SRCS src/linux/Mutex.cpp)
     list(APPEND SRCS src/linux/Path.cpp)
 endif()
 if (APPLE)
@@ -117,3 +119,23 @@ endif()
 add_executable(test_${TARGET} ${TEST_SRCS})
 
 target_link_libraries(test_${TARGET} PRIVATE gtest utils tsl math)
+
+# ==================================================================================================
+# Benchmarks
+# ==================================================================================================
+
+add_library(benchmark_${TARGET}_callee SHARED benchmark/benchmark_callee.cpp)
+
+
+set(BENCHMARK_SRCS
+        benchmark/benchmark_allocators.cpp
+        benchmark/benchmark_binary_search.cpp
+        benchmark/benchmark_calls.cpp
+        benchmark/benchmark_JobSystem.cpp
+        benchmark/benchmark_mutex.cpp
+        benchmark/benchmark_memcpy.cpp)
+
+
+add_executable(benchmark_${TARGET} ${BENCHMARK_SRCS})
+
+target_link_libraries(benchmark_${TARGET} PRIVATE benchmark_main utils benchmark_${TARGET}_callee)

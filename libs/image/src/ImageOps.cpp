@@ -20,6 +20,7 @@
 #include <utils/Panic.h>
 
 #include <algorithm>
+#include <memory>
 
 using namespace math;
 
@@ -122,8 +123,20 @@ LinearImage vectorsToColors(const LinearImage& image) {
     LinearImage result(width, height, 3);
     auto src = (float3 const*) image.getPixelRef();
     auto dst = (float3*) result.getPixelRef();
-    for (uint32_t n = 0; n < width * height; ++n) {
+    for (uint32_t n = 0, end = width * height; n < end; ++n) {
         dst[n] = 0.5f * (src[n] + float3(1));
+    }
+    return result;
+}
+
+LinearImage colorsToVectors(const LinearImage& image) {
+    ASSERT_PRECONDITION(image.getChannels() == 3, "Must be a 3-channel image.");
+    const uint32_t width = image.getWidth(), height = image.getHeight();
+    LinearImage result(width, height, 3);
+    auto src = (float3 const*) image.getPixelRef();
+    auto dst = (float3*) result.getPixelRef();
+    for (uint32_t n = 0, end = width * height; n < end; ++n) {
+        dst[n] = 2.0f * src[n] - float3(1);
     }
     return result;
 }
@@ -221,6 +234,14 @@ int compare(const LinearImage& a, const LinearImage& b, float epsilon) {
     float const* bdata = b.getPixelRef();
     return std::lexicographical_compare(adata, adata + w * h * c, bdata, bdata + w * h * c,
             [epsilon](float x, float y) { return x < y - epsilon; });
+}
+
+void clearToValue(LinearImage& image, float value) {
+    const uint32_t nvals = image.getWidth() * image.getHeight() * image.getChannels();
+    float* data = image.getPixelRef();
+    for (uint32_t index = 0; index < nvals; ++index) {
+        data[index] = value;
+    }
 }
 
 } // namespace image

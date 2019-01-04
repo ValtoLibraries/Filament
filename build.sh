@@ -2,9 +2,11 @@
 set -e
 
 # NDK API level
-API_LEVEL=24
-# Host tools required by Android builds
-HOST_TOOLS="matc cmgen"
+API_LEVEL=21
+# Host tools required by Android, WebGL, and iOS builds
+MOBILE_HOST_TOOLS="matc resgen cmgen"
+WEB_HOST_TOOLS="${MOBILE_HOST_TOOLS} mipgen filamesh"
+IOS_TOOLCHAIN_URL="https://opensource.apple.com/source/clang/clang-800.0.38/src/cmake/platforms/iOS.cmake"
 
 function print_help {
     local SELF_NAME=`basename $0`
@@ -26,18 +28,19 @@ function print_help {
     echo "        Do not compile desktop Java projects"
     echo "    -m"
     echo "        Compile with make instead of ninja."
-    echo "    -p [desktop|android|all]"
+    echo "    -p platform1,platform2,..."
+    echo "        Where platformN is [desktop|android|ios|webgl|all]."
     echo "        Platform(s) to build, defaults to desktop."
-    echo "        Building android will automatically generate the toolchains if needed and"
-    echo "        perform a partial desktop build."
-    echo "    -r"
-    echo "        Restrict the number of make/ninja jobs."
+    echo "        Building for Android or iOS will automatically generate / download"
+    echo "        the toolchains if needed and perform a partial desktop build."
     echo "    -t"
     echo "        Generate the Android toolchain, requires \$ANDROID_HOME to be set."
     echo "    -u"
     echo "        Run all unit tests, will trigger a debug build if needed."
     echo "    -v"
     echo "        Add Vulkan support to the Android build."
+    echo "    -s"
+    echo "        Add iOS simulator support to the iOS build."
     echo ""
     echo "Build types:"
     echo "    release"
@@ -51,12 +54,19 @@ function print_help {
     echo "Examples:"
     echo "    Desktop release build:"
     echo "        \$ ./$SELF_NAME release"
+    echo ""
     echo "    Desktop debug and release builds:"
     echo "        \$ ./$SELF_NAME debug release"
+    echo ""
     echo "    Clean, desktop debug build and create archive of build artifacts:"
     echo "        \$ ./$SELF_NAME -c -a debug"
+    echo ""
     echo "    Android release build type:"
     echo "        \$ ./$SELF_NAME -p android release"
+    echo ""
+    echo "    Desktop and Android release builds, with installation:"
+    echo "        \$ ./$SELF_NAME -p desktop,android -i release"
+    echo ""
     echo "    Desktop matc target, release build:"
     echo "        \$ ./$SELF_NAME release matc"
     echo ""
@@ -70,8 +80,11 @@ ISSUE_CLEAN=false
 ISSUE_DEBUG_BUILD=false
 ISSUE_RELEASE_BUILD=false
 
+# Default: build desktop only
 ISSUE_ANDROID_BUILD=false
+ISSUE_IOS_BUILD=false
 ISSUE_DESKTOP_BUILD=true
+ISSUE_WEBGL_BUILD=false
 
 ISSUE_ARCHIVES=false
 
@@ -86,6 +99,8 @@ INSTALL_COMMAND=
 GENERATE_TOOLCHAINS=false
 
 VULKAN_ANDROID_OPTION="-DFILAMENT_SUPPORTS_VULKAN=OFF"
+
+IOS_BUILD_SIMULATOR=false
 
 BUILD_GENERATOR=Ninja
 BUILD_COMMAND=ninja
@@ -191,6 +206,78 @@ function build_desktop {
     fi
 }
 
+function build_webgl_with_target {
+    local LC_TARGET=`echo $1 | tr '[:upper:]' '[:lower:]'`
+    echo "Building WebGL $LC_TARGET..."
+    mkdir -p out/cmake-webgl-${LC_TARGET}
+    cd out/cmake-webgl-${LC_TARGET}
+    if [ ! "$BUILD_TARGETS" ]; then
+        BUILD_TARGETS=${BUILD_CUSTOM_TARGETS}
+        ISSUE_CMAKE_ALWAYS=true
+    fi
+    if [ ! -d "CMakeFiles" ] || [ "$ISSUE_CMAKE_ALWAYS" == "true" ]; then
+        source ${EMSDK}/emsdk_env.sh
+        cmake \
+            -G "$BUILD_GENERATOR" \
+            -DCMAKE_TOOLCHAIN_FILE=${EMSCRIPTEN}/cmake/Modules/Platform/Emscripten.cmake \
+            -DCMAKE_BUILD_TYPE=$1 \
+            -DCMAKE_INSTALL_PREFIX=../webgl-${LC_TARGET}/filament \
+            -DWEBGL=1 \
+            ../..
+        ${BUILD_COMMAND} ${BUILD_TARGETS}
+    fi
+
+    if [ -d "web/filament-js" ]; then
+        if [ "$ISSUE_ARCHIVES" == "true" ]; then
+
+            which -s python3
+            if [ $? == 0 ]; then
+                echo "Generating JavaScript documentation..."
+                local DOCS_FOLDER="web/docs"
+                local DOCS_SCRIPT="../../web/docs/build.py"
+                python3 ${DOCS_SCRIPT} --disable-demo \
+                    --output-folder ${DOCS_FOLDER} \
+                    --build-folder ${PWD}
+            fi
+
+            echo "Generating out/filament-${LC_TARGET}-web.tgz..."
+            # The web archive has the following subfolders:
+            # dist...core WASM module and accompanying JS file.
+            # docs...HTML tutorials for the JS API, accompanying demos, and a reference page.
+            cd web
+            tar -cvf ../../filament-${LC_TARGET}-web.tar -s /^filament-js/dist/ \
+                    filament-js/filament.js
+            tar -rvf ../../filament-${LC_TARGET}-web.tar -s /^filament-js/dist/ \
+                    filament-js/filament.wasm
+            tar -rvf ../../filament-${LC_TARGET}-web.tar docs
+            cd -
+            gzip -c ../filament-${LC_TARGET}-web.tar > ../filament-${LC_TARGET}-web.tgz
+            rm ../filament-${LC_TARGET}-web.tar
+        fi
+    fi
+
+    cd ../..
+}
+
+function build_webgl {
+    # For the host tools, supress install and always use Release.
+    OLD_INSTALL_COMMAND=${INSTALL_COMMAND}; INSTALL_COMMAND=
+    OLD_ISSUE_DEBUG_BUILD=${ISSUE_DEBUG_BUILD}; ISSUE_DEBUG_BUILD=false
+    OLD_ISSUE_RELEASE_BUILD=${ISSUE_RELEASE_BUILD}; ISSUE_RELEASE_BUILD=true
+    build_desktop "${WEB_HOST_TOOLS}"
+    INSTALL_COMMAND=${OLD_INSTALL_COMMAND}
+    ISSUE_DEBUG_BUILD=${OLD_ISSUE_DEBUG_BUILD}
+    ISSUE_RELEASE_BUILD=${OLD_ISSUE_RELEASE_BUILD}
+
+    if [ "$ISSUE_DEBUG_BUILD" == "true" ]; then
+        build_webgl_with_target "Debug"
+    fi
+
+    if [ "$ISSUE_RELEASE_BUILD" == "true" ]; then
+        build_webgl_with_target "Release"
+    fi
+}
+
 function build_android_target {
     local LC_TARGET=`echo $1 | tr '[:upper:]' '[:lower:]'`
     local ARCH=$2
@@ -252,7 +339,7 @@ function build_android {
     # Supress intermediate desktop tools install
     OLD_INSTALL_COMMAND=${INSTALL_COMMAND}
     INSTALL_COMMAND=
-    build_desktop "${HOST_TOOLS}"
+    build_desktop "${MOBILE_HOST_TOOLS}"
     INSTALL_COMMAND=${OLD_INSTALL_COMMAND}
 
     build_android_arch "aarch64" "aarch64-linux-android" "arm64"
@@ -272,7 +359,7 @@ function build_android {
 
     if [ "$ISSUE_DEBUG_BUILD" == "true" ]; then
         ./gradlew -Pfilament_dist_dir=../../out/android-debug/filament assembleDebug \
-            -Pextra_cmake_args=$VULKAN_ANDROID_OPTION
+            -Pextra_cmake_args=${VULKAN_ANDROID_OPTION}
 
         if [ "$INSTALL_COMMAND" ]; then
             echo "Installing out/filament-android-debug.aar..."
@@ -282,7 +369,7 @@ function build_android {
 
     if [ "$ISSUE_RELEASE_BUILD" == "true" ]; then
         ./gradlew -Pfilament_dist_dir=../../out/android-release/filament assembleRelease \
-            -Pextra_cmake_args=$VULKAN_ANDROID_OPTION
+            -Pextra_cmake_args=${VULKAN_ANDROID_OPTION}
 
         if [ "$INSTALL_COMMAND" ]; then
             echo "Installing out/filament-android-release.aar..."
@@ -293,6 +380,100 @@ function build_android {
     cd ../..
 }
 
+function ensure_ios_toolchain {
+    local TOOLCHAIN_PATH="build/toolchain-mac-ios.cmake"
+    if [ -e ${TOOLCHAIN_PATH} ]; then
+        echo "iOS toolchain file exists."
+        return 0
+    fi
+    echo
+    echo "iOS toolchain file does not exist."
+    echo "It will automatically be downloaded from http://opensource.apple.com."
+    read -p "Continue? (y/n) " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        echo "Toolchain file must be downloaded to continue."
+        exit 1
+    fi
+    curl -o "${TOOLCHAIN_PATH}" "${IOS_TOOLCHAIN_URL}" || {
+        echo "Error downloading iOS toolchain file."
+        exit 1
+    }
+
+    # Apple's toolchain hard-codes the PLATFORM_NAME into the toolchain file. Instead, make this a
+    # CACHE variable that can be overriden on the command line.
+    local FIND='SET(PLATFORM_NAME iphoneos)'
+    local REPLACE='SET(PLATFORM_NAME "iphoneos" CACHE STRING "iOS platform to build for")'
+    sed -i '' "s/${FIND}/${REPLACE}/g" ./${TOOLCHAIN_PATH}
+
+    # Append Filament-specific settings.
+    cat build/toolchain-mac-ios.filament.cmake >> ${TOOLCHAIN_PATH}
+
+    echo "Successfully downloaded iOS toolchain file and appended Filament-specific settings."
+}
+
+function build_ios_target {
+    local LC_TARGET=`echo $1 | tr '[:upper:]' '[:lower:]'`
+    local ARCH=$2
+    local PLATFORM=$3
+
+    echo "Building iOS $LC_TARGET ($ARCH) for $PLATFORM..."
+    mkdir -p out/cmake-ios-${LC_TARGET}-${ARCH}
+
+    cd out/cmake-ios-${LC_TARGET}-${ARCH}
+
+    if [ ! -d "CMakeFiles" ] || [ "$ISSUE_CMAKE_ALWAYS" == "true" ]; then
+        cmake \
+            -G "$BUILD_GENERATOR" \
+            -DCMAKE_BUILD_TYPE=$1 \
+            -DCMAKE_INSTALL_PREFIX=../ios-${LC_TARGET}/filament \
+            -DIOS_ARCH=${ARCH} \
+            -DPLATFORM_NAME=${PLATFORM} \
+            -DIOS=1 \
+            -DCMAKE_TOOLCHAIN_FILE=../../build/toolchain-mac-ios.cmake \
+            ../..
+    fi
+
+    ${BUILD_COMMAND} install
+
+    if [ -d "../ios-${LC_TARGET}/filament" ]; then
+        if [ "$ISSUE_ARCHIVES" == "true" ]; then
+            echo "Generating out/filament-${LC_TARGET}-ios.tgz..."
+            cd ../ios-${LC_TARGET}
+            tar -czvf ../filament-${LC_TARGET}-ios.tgz filament
+        fi
+    fi
+
+    cd ../..
+}
+
+function build_ios {
+    # Supress intermediate desktop tools install
+    OLD_INSTALL_COMMAND=${INSTALL_COMMAND}
+    INSTALL_COMMAND=
+    build_desktop "${MOBILE_HOST_TOOLS}"
+    INSTALL_COMMAND=${OLD_INSTALL_COMMAND}
+
+    ensure_ios_toolchain
+
+    # In theory, we could support iPhone architectures older than arm64, but
+    # only arm64 devices support OpenGL 3.0 / Metal
+
+    if [ "$ISSUE_DEBUG_BUILD" == "true" ]; then
+        build_ios_target "Debug" "arm64" "iphoneos"
+        if [ "$IOS_BUILD_SIMULATOR" == "true" ]; then
+            build_ios_target "Debug" "x86_64" "iphonesimulator"
+        fi
+    fi
+
+    if [ "$ISSUE_RELEASE_BUILD" == "true" ]; then
+        build_ios_target "Release" "arm64" "iphoneos"
+        if [ "$IOS_BUILD_SIMULATOR" == "true" ]; then
+            build_ios_target "Release" "x86_64" "iphonesimulator"
+        fi
+    fi
+}
+
 function validate_build_command {
     set +e
     # Make sure CMake is installed
@@ -301,7 +482,7 @@ function validate_build_command {
         echo "Error: could not find cmake, exiting"
         exit 1
     fi
-    
+
     # Make sure Ninja is installed
     if [ "$BUILD_COMMAND" == "ninja" ]; then
         ninja_binary=`which ninja`
@@ -325,6 +506,11 @@ function validate_build_command {
         echo "Warning: JAVA_HOME is not set, skipping Java projects"
         ENABLE_JAVA=OFF
     fi
+    # If building a WebAssembly module, ensure we know where Emscripten lives.
+    if [ "$EMSDK" == "" ] && [ "$ISSUE_WEBGL_BUILD" == "true" ]; then
+        echo "Error: EMSDK is not set, exiting"
+        exit 1
+    fi
     set -e
 }
 
@@ -334,7 +520,7 @@ function run_test {
     # first whitespace-separated token in the string.
     set -- $test
     test_name=`basename $1`
-    ./out/cmake-debug/$test --gtest_output="xml:out/test-results/$test_name/sponge_log.xml"
+    ./out/cmake-debug/${test} --gtest_output="xml:out/test-results/$test_name/sponge_log.xml"
 }
 
 function run_tests {
@@ -347,7 +533,7 @@ function run_tests {
 
 pushd `dirname $0` > /dev/null
 
-while getopts ":hacfijmp:tuv" opt; do
+while getopts ":hacfijmp:tuvs" opt; do
     case ${opt} in
         h)
             print_help
@@ -374,20 +560,31 @@ while getopts ":hacfijmp:tuv" opt; do
             BUILD_COMMAND="make"
             ;;
         p)
-            case $OPTARG in
-                desktop)
-                    ISSUE_ANDROID_BUILD=false
-                    ISSUE_DESKTOP_BUILD=true
-                ;;
-                android)
-                    ISSUE_ANDROID_BUILD=true
-                    ISSUE_DESKTOP_BUILD=false
-                ;;
-                all)
-                    ISSUE_ANDROID_BUILD=true
-                    ISSUE_DESKTOP_BUILD=true
-                ;;
-            esac
+            ISSUE_DESKTOP_BUILD=false
+            platforms=$(echo "$OPTARG" | tr ',' '\n')
+            for platform in $platforms
+            do
+                case $platform in
+                    desktop)
+                        ISSUE_DESKTOP_BUILD=true
+                    ;;
+                    android)
+                        ISSUE_ANDROID_BUILD=true
+                    ;;
+                    ios)
+                        ISSUE_IOS_BUILD=true
+                    ;;
+                    webgl)
+                        ISSUE_WEBGL_BUILD=true
+                    ;;
+                    all)
+                        ISSUE_ANDROID_BUILD=true
+                        ISSUE_IOS_BUILD=true
+                        ISSUE_DESKTOP_BUILD=true
+                        ISSUE_WEBGL_BUILD=false
+                    ;;
+                esac
+            done
             ;;
         t)
             GENERATE_TOOLCHAINS=true
@@ -405,6 +602,10 @@ while getopts ":hacfijmp:tuv" opt; do
             echo "add -Pextra_cmake_args=-DFILAMENT_SUPPORTS_VULKAN=ON."
             echo "Also be sure to pass Backend::VULKAN to Engine::create."
             echo ""
+            ;;
+        s)
+            IOS_BUILD_SIMULATOR=true
+            echo "iOS simulator support enabled."
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -454,6 +655,14 @@ fi
 
 if [ "$ISSUE_ANDROID_BUILD" == "true" ]; then
     build_android
+fi
+
+if [ "$ISSUE_IOS_BUILD" == "true" ]; then
+    build_ios
+fi
+
+if [ "$ISSUE_WEBGL_BUILD" == "true" ]; then
+    build_webgl
 fi
 
 if [ "$RUN_TESTS" == "true" ]; then

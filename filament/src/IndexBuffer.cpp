@@ -60,7 +60,8 @@ FIndexBuffer::FIndexBuffer(FEngine& engine, const IndexBuffer::Builder& builder)
     FEngine::DriverApi& driver = engine.getDriverApi();
     mHandle = driver.createIndexBuffer(
             (driver::ElementType)builder->mIndexType,
-            uint32_t(builder->mIndexCount));
+            uint32_t(builder->mIndexCount),
+            driver::BufferUsage::STATIC);
 }
 
 void FIndexBuffer::terminate(FEngine& engine) {
@@ -75,7 +76,7 @@ void FIndexBuffer::setBuffer(FEngine& engine,
         byteSize = uint32_t(buffer.size);
     }
 
-    engine.getDriverApi().loadIndexBuffer(mHandle, std::move(buffer), byteOffset, byteSize);
+    engine.getDriverApi().updateIndexBuffer(mHandle, std::move(buffer), byteOffset, byteSize);
 }
 
 } // namespace details

@@ -45,7 +45,7 @@ struct VulkanTexture;
 // - The attachment's VkImage is shared and the owner is VulkanSwapChain.
 // - The attachment's VkImage is shared and the owner is VulkanTexture.
 //
-// We use private inheritence to shield clients from the width / height fields in HwRenderTarget,
+// We use private inheritance to shield clients from the width / height fields in HwRenderTarget,
 // which are not representative when this is the default render target.
 struct VulkanRenderTarget : private HwRenderTarget {
 
@@ -54,7 +54,7 @@ struct VulkanRenderTarget : private HwRenderTarget {
             mContext(context), mOffscreen(true) {}
 
     // Creates a special "default" render target (i.e. associated with the swap chain)
-    VulkanRenderTarget(VulkanContext& context) : HwRenderTarget(0, 0), mContext(context),
+    explicit VulkanRenderTarget(VulkanContext& context) : HwRenderTarget(0, 0), mContext(context),
             mOffscreen(false) {}
 
     ~VulkanRenderTarget();
@@ -99,7 +99,8 @@ struct VulkanIndexBuffer : public HwIndexBuffer {
 };
 
 struct VulkanUniformBuffer : public HwUniformBuffer {
-    VulkanUniformBuffer(VulkanContext& context, VulkanStagePool& stagePool, uint32_t numBytes);
+    VulkanUniformBuffer(VulkanContext& context, VulkanStagePool& stagePool, uint32_t numBytes,
+            driver::BufferUsage usage);
     ~VulkanUniformBuffer();
     void loadFromCpu(const void* cpuData, uint32_t numBytes);
     VkBuffer getGpuBuffer() const { return mGpuBuffer; }
@@ -119,24 +120,32 @@ struct VulkanTexture : public HwTexture {
             TextureFormat format, uint8_t samples, uint32_t w, uint32_t h, uint32_t depth,
             TextureUsage usage, VulkanStagePool& stagePool);
     ~VulkanTexture();
-    void load2DImage(PixelBufferDescriptor&& data, uint32_t width, uint32_t height, int miplevel);
-    void loadCubeImage(PixelBufferDescriptor&& data, const FaceOffsets& faceOffsets, int miplevel);
+    void update2DImage(const PixelBufferDescriptor& data, uint32_t width, uint32_t height,
+            int miplevel);
+    void updateCubeImage(const PixelBufferDescriptor& data, const FaceOffsets& faceOffsets,
+            int miplevel);
     VkFormat format;
     VkImageView imageView = VK_NULL_HANDLE;
     VkImage textureImage = VK_NULL_HANDLE;
     VkDeviceMemory textureImageMemory = VK_NULL_HANDLE;
 private:
+
+    // Issues a barrier that transforms the layout of the image, e.g. from a CPU-writeable
+    // layout to a GPU-readable layout.
     void transitionImageLayout(VkCommandBuffer cmdbuffer, VkImage image,
             VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t miplevel);
+
+    // Issues a copy from a VkBuffer to a specified miplevel in a VkImage. The given width and
+    // height define a subregion within the miplevel.
     void copyBufferToImage(VkCommandBuffer cmdbuffer, VkBuffer buffer, VkImage image,
             uint32_t width, uint32_t height, FaceOffsets const* faceOffsets, uint32_t miplevel);
+
     VulkanContext& mContext;
     VulkanStagePool& mStagePool;
-    uint32_t mByteCount;
 };
 
 struct VulkanRenderPrimitive : public HwRenderPrimitive {
-    VulkanRenderPrimitive(VulkanContext& context) {}
+    explicit VulkanRenderPrimitive(VulkanContext& context) {}
     void setPrimitiveType(Driver::PrimitiveType pt);
     void setBuffers(VulkanVertexBuffer* vertexBuffer, VulkanIndexBuffer* indexBuffer,
             uint32_t enabledAttributes);

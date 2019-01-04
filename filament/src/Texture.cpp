@@ -35,6 +35,7 @@ struct Texture::BuilderDetails {
     uint8_t mLevels = 1;
     Sampler mTarget = Sampler::SAMPLER_2D;
     InternalFormat mFormat = InternalFormat::RGBA8;
+    bool mRgbm = false;
     Usage mUsage = Usage::DEFAULT;
 };
 
@@ -77,6 +78,11 @@ Texture::Builder& Texture::Builder::format(Texture::InternalFormat format) noexc
     return *this;
 }
 
+Texture::Builder& Texture::Builder::rgbm(bool enabled) noexcept {
+    mImpl->mRgbm = enabled;
+    return *this;
+}
+
 Texture::Builder& Texture::Builder::usage(Texture::Usage usage) noexcept {
     mImpl->mUsage = usage;
     return *this;
@@ -98,6 +104,7 @@ FTexture::FTexture(FEngine& engine, const Builder& builder) {
     mWidth  = static_cast<uint32_t>(builder->mWidth);
     mHeight = static_cast<uint32_t>(builder->mHeight);
     mFormat = builder->mFormat;
+    mRgbm = builder->mRgbm;
     mUsage = builder->mUsage;
     mTarget = builder->mTarget;
     mDepth  = static_cast<uint32_t>(builder->mDepth);
@@ -136,7 +143,7 @@ void FTexture::setImage(FEngine& engine,
         Texture::PixelBufferDescriptor&& buffer) const noexcept {
     if (!mStream && mTarget != Sampler::SAMPLER_CUBEMAP && level < mLevels) {
         if (buffer.buffer) {
-            engine.getDriverApi().load2DImage(mHandle,
+            engine.getDriverApi().update2DImage(mHandle,
                     uint8_t(level), xoffset, yoffset, width, height, std::move(buffer));
         }
     }
@@ -146,7 +153,7 @@ void FTexture::setImage(FEngine& engine, size_t level,
         Texture::PixelBufferDescriptor&& buffer, const FaceOffsets& faceOffsets) const noexcept {
     if (!mStream && mTarget == Sampler::SAMPLER_CUBEMAP && level < mLevels) {
         if (buffer.buffer) {
-            engine.getDriverApi().loadCubeImage(mHandle, uint8_t(level),
+            engine.getDriverApi().updateCubeImage(mHandle, uint8_t(level),
                     std::move(buffer), faceOffsets);
         }
     }
@@ -234,7 +241,6 @@ size_t FTexture::getFormatSize(InternalFormat format) noexcept {
         case TextureFormat::RGBA8:
         case TextureFormat::SRGB8_A8:
         case TextureFormat::RGBA8_SNORM:
-        case TextureFormat::RGBM:
         case TextureFormat::RGB10_A2:
         case TextureFormat::RGBA8UI:
         case TextureFormat::RGBA8I:
@@ -306,6 +312,10 @@ Texture::Sampler Texture::getTarget() const noexcept {
 
 Texture::InternalFormat Texture::getFormat() const noexcept {
     return upcast(this)->getFormat();
+}
+
+bool Texture::isRgbm() const noexcept {
+    return upcast(this)->isRgbm();
 }
 
 void Texture::setImage(Engine& engine, size_t level,

@@ -20,14 +20,14 @@ set(SRCS
 if (WIN32)
     set(SRCS ${SRCS} src/BlueGLWindows.cpp)
     set(SRCS ${SRCS} src/BlueGLCoreWindowsImpl.S)
-elseif (APPLE)
+elseif (APPLE AND NOT IOS)
     set(SRCS ${SRCS} src/BlueGLDarwin.cpp)
     set(SRCS ${SRCS} src/BlueGLCoreDarwinImpl.S)
 elseif(LINUX)
     set(SRCS ${SRCS} src/BlueGLLinux.cpp)
     set(SRCS ${SRCS} src/BlueGLCoreLinuxImpl.S)
 else()
-    message(FATAL_ERROR "Plateform not supported. BlueGL supports Windows, Linux, and MacOS X.")
+    message(FATAL_ERROR "Platform not supported. BlueGL supports Windows, Linux, and MacOS X.")
 endif()
 
 if (NOT WIN32)
@@ -53,6 +53,8 @@ target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 if (WIN32)
     target_link_libraries(${TARGET} PRIVATE opengl32 gdi32)
 endif()
+
+install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
 
 # Build the tests...
 add_executable(test_${TARGET}

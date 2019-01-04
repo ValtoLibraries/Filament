@@ -23,10 +23,9 @@
 #include <math/vec3.h>
 #include <math/vec2.h>
 
-#include <image/Image.h>
-
 #include <utils/compiler.h>
 
+#include "Image.h"
 #include "utilities.h"
 
 class Cubemap {
@@ -52,8 +51,9 @@ public:
 
     void resetDimensions(size_t dim);
 
-    void setImageForFace(Face face, const image::Image& image);
-    inline const image::Image& getImageForFace(Face face) const;
+    void setImageForFace(Face face, const Image& image);
+    inline const Image& getImageForFace(Face face) const;
+    inline Image& getImageForFace(Face face);
 
     inline math::double2 center(size_t x, size_t y) const;
 
@@ -63,7 +63,7 @@ public:
     inline Texel const& sampleAt(const math::double3& direction) const;
     inline Texel        filterAt(const math::double3& direction) const;
 
-    static Texel filterAt(const image::Image& image, double x, double y);
+    static Texel filterAt(const Image& image, double x, double y);
 
     static Texel trilinearFilterAt(const Cubemap& c0, const Cubemap& c1, double lerp,
             const math::double3& direction);
@@ -78,15 +78,8 @@ public:
 
     size_t getDimensions() const;
 
-    enum class Geometry {
-        HORIZONTAL_CROSS,
-        VERTICAL_CROSS,
-    };
-    void setGeometry(Geometry geometry) { mGeometry = geometry; }
-    Geometry getGeometry() const { return mGeometry; }
     void makeSeamless();
 
-private:
     struct Address {
         Face face;
         double s = 0;
@@ -97,14 +90,18 @@ private:
     // (this is why this is private)
     static Address getAddressFor(const math::double3& direction);
 
+private:
     size_t mDimensions = 0;
     double mScale = 1;
     double mUpperBound = 0;
-    image::Image mFaces[6];
-    Geometry mGeometry = Geometry::HORIZONTAL_CROSS;
+    Image mFaces[6];
 };
 
-inline const image::Image& Cubemap::getImageForFace(Face face) const {
+inline const Image& Cubemap::getImageForFace(Face face) const {
+    return mFaces[int(face)];
+}
+
+inline Image& Cubemap::getImageForFace(Face face) {
     return mFaces[int(face)];
 }
 

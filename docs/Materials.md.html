@@ -83,6 +83,7 @@ in table [standardProperties].
 **anisotropyDirection** | Local surface direction
 **ambientOcclusion**    | Defines how much of the ambient light is accessible to a surface point. It is a per-pixel shadowing factor between 0.0 and 1.0
 **normal**              | A detail normal used to perturb the surface using _bump mapping_ (_normal mapping_)
+**clearCoatNormal**     | A detail normal used to perturb the clear coat layer using _bump mapping_ (_normal mapping_)
 **emissive**            | Additional diffuse albedo to simulate emissive surfaces (such as neons, etc.) This property is mostly useful in an HDR pipeline with a bloom pass
 [Table [standardProperties]: Properties of the standard model]
 
@@ -100,6 +101,7 @@ The type and range of each property is described in table [standardPropertiesTyp
 **anisotropyDirection** | float3   |  [0..1]                  | Linear RGB, encodes a direction vector in tangent space
 **ambientOcclusion**    | float    |  [0..1]                  |
 **normal**              | float3   |  [0..1]                  | Linear RGB, encodes a direction vector in tangent space
+**clearCoatNormal**     | float3   |  [0..1]                  | Linear RGB, encodes a direction vector in tangent space
 **emissive**            | float4   |  rgb=[0..1], a=[-n..n]   | Alpha is the exposure compensation
 [Table [standardPropertiesTypes]: Range and type of the standard model's properties]
 
@@ -144,14 +146,14 @@ Metals (conductors)
 
     Metal  |        sRGB         |  Hexadecimal |               Color
 ----------:|:-------------------:|:------------:|-------------------------------------------------------
-Silver     | 0.98, 0.98, 0.96    | #faf9f5     | <div style="background-color: #faf9f5; width: 60px">&nbsp;</div>
-Aluminum   | 0.96, 0.96, 0.96    | #f4f5f5     | <div style="background-color: #f4f5f5; width: 60px">&nbsp;</div>
-Titanium   | 0.81, 0.78, 0.76    | #cec8c2     | <div style="background-color: #cec8c2; width: 60px">&nbsp;</div>
-Iron       | 0.76, 0.74, 0.73    | #c0bdba     | <div style="background-color: #c0bdba; width: 60px">&nbsp;</div>
-Platinum   | 0.84, 0.82, 0.79    | #d6d1c8     | <div style="background-color: #d6d1c8; width: 60px">&nbsp;</div>
-Gold       | 1.00, 0.87, 0.62    | #fedc9d     | <div style="background-color: #fedc9d; width: 60px">&nbsp;</div>
-Brass      | 0.96, 0.89, 0.68    | #f4e4ad     | <div style="background-color: #f4e4ad; width: 60px">&nbsp;</div>
-Copper     | 0.98, 0.85, 0.72    | #fbd8b8     | <div style="background-color: #fbd8b8; width: 60px">&nbsp;</div>
+Silver     | 0.97, 0.96, 0.91    | #f7f4e8     | <div style="background-color: #faf9f5; width: 60px">&nbsp;</div>
+Aluminum   | 0.91, 0.92, 0.92    | #e8eaea     | <div style="background-color: #f4f5f5; width: 60px">&nbsp;</div>
+Titanium   | 0.76, 0.73, 0.69    | #c1baaf     | <div style="background-color: #cec8c2; width: 60px">&nbsp;</div>
+Iron       | 0.77, 0.78, 0.78    | #c4c6c6     | <div style="background-color: #c0bdba; width: 60px">&nbsp;</div>
+Platinum   | 0.83, 0.81, 0.78    | #d3cec6     | <div style="background-color: #d6d1c8; width: 60px">&nbsp;</div>
+Gold       | 1.00, 0.85, 0.57    | #ffd891     | <div style="background-color: #fedc9d; width: 60px">&nbsp;</div>
+Brass      | 0.98, 0.90, 0.59    | #f9e596     | <div style="background-color: #f4e4ad; width: 60px">&nbsp;</div>
+Copper     | 0.97, 0.74, 0.62    | #f7bc9e     | <div style="background-color: #fbd8b8; width: 60px">&nbsp;</div>
 [Table [baseColorsConductors]: `baseColor` for common metals]
 
 ### Metallic
@@ -217,14 +219,19 @@ Table [commonMatReflectance] describes acceptable reflectance values for various
 (no real world material has a value under 2%).
 
 
-          Material         |      Reflectance      |   Property value
---------------------------:|:---------------------:|:------------------
-Glass                      | 3.5%                  | 0.46
-Water                      | 2%                    | 0.35
-Common liquids             | 2% to 4%              | 0.35 to 0.5
-Common gemstones           | 8% to 16%             | 0.70 to 1.0
-Other dielectric materials | 2% to 5%              | 0.35 to 0.56
-Default value              | 4%                    | 0.50
+          Material         |    Reflectance   |  Property value
+--------------------------:|:-----------------|:----------------
+Water                      | 2%               | 0.35
+Fabric                     | 4% to 5.6%       | 0.5 to 0.59
+Common liquids             | 2% to 4%         | 0.35 to 0.5
+Common gemstones           | 5% to 16%        | 0.56 to 1.0
+Plastics, glass            | 4% to 5%         | 0.5 to 0.56
+Other dielectric materials | 2% to 5%         | 0.35 to 0.56
+Eyes                       | 2.5%             | 0.39
+Skin                       | 2.8%             | 0.42
+Hair                       | 4.6%             | 0.54
+Teeth                      | 5.8%             | 0.6
+Default value              | 4%               | 0.5
 [Table [commonMatReflectance]: Reflectance of common materials]
 
 ### Clear coat
@@ -336,6 +343,17 @@ and with (right)](images/screenshot_normal_mapping.jpg)
 
 !!! Warning
     Using a normal map increases the runtime cost of the material model.
+    
+### Clear coat normal
+
+The `clearCoatNormal` property defines the normal of the clear coat layer at a given point. It
+behaves otherwise like the `normal` property.
+
+![Figure [clearCoatNormalMapped]: A material with a clear coat normal
+map and a surface normal map](images/screenshot_clear_coat_normal.jpg)
+
+!!! Warning
+    Using a clear coat normal map increases the runtime cost of the material model.
 
 ### Emissive
 
@@ -382,7 +400,7 @@ Velvet is an interesting use case for a cloth material model. As shown in figure
 this type of fabric exhibits strong rim lighting due to forward and backward scattering. These
 scattering events are caused by fibers standing straight at the surface of the fabric. When the
 incident light comes from the direction opposite to the view direction, the fibers will forward
-scatter the light. Similarly, when the incident light from from the same direction as the view
+scatter the light. Similarly, when the incident light from the same direction as the view
 direction, the fibers will scatter the light backward.
 
 ![Figure [materialVelvet]: Velvet fabric showcasing forward and
@@ -1239,6 +1257,7 @@ struct MaterialInputs {
     // not available when the shading model is subsurface or cloth
     float  clearCoat;           // default: 1.0
     float  clearCoatRoughness;  // default: 0.0
+    float3 clearCoatNormal;     // default: float3(0.0, 0.0, 1.0)
     float  anisotropy;          // default: 0.0
     float3 anisotropyDirection; // default: float3(1.0, 0.0, 0.0)
 
@@ -1311,6 +1330,8 @@ type aliases:
 **getResolution()**                 | float4   |  Resolution of the view in pixels: `width`, `height`, `1 / width`, `1 / height`
 **getWorldCameraPosition()**        | float3   |  Position of the camera/eye in world space
 **getTime()**                       | float    |  Current time in seconds, may be reset regularly to avoid precision loss
+**getUserTime()**                   | float4   |  Current time in seconds: `time`, `(double)time - time`, `0`, `0`
+**getUserTimeMode(float m)**        | float    |  Current time modulo m in seconds
 **getExposure()**                   | float    |  Photometric exposure of the camera
 **getEV100()**                      | float    |  [Exposure value at ISO 100](https://en.wikipedia.org/wiki/Exposure_value) of the camera
 
@@ -1339,8 +1360,8 @@ The following APIs are only available from the fragment block:
 **getColor()**                   | float4   |  Interpolated color of the fragment, if the color attribute is required
 **getUV0()**                     | float2   |  First interpolated set of UV coordinates, if the uv0 attribute is required
 **getUV1()**                     | float2   |  First interpolated set of UV coordinates, if the uv1 attribute is required
-**inverseTonemap(float3)**       | float3   |  Applies the inverse tone mapping operator to the specified linear sRGB color. This operation may be an approximation
-**inverseTonemapSRGB(float3)**   | float3   |  Applies the inverse tone mapping operator to the specified non-linear sRGB color. This operation may be an approximation
+**inverseTonemap(float3)**       | float3   |  Applies the inverse tone mapping operator to the specified linear sRGB color and returns a linear sRGB color. This operation may be an approximation
+**inverseTonemapSRGB(float3)**   | float3   |  Applies the inverse tone mapping operator to the specified non-linear sRGB color and returns a linear sRGB color. This operation may be an approximation
 **luminance(float3)**            | float    |  Computes the luminance of the specified linear sRGB color
 
 # Compiling materials
@@ -1377,9 +1398,7 @@ The command line flags relevant to application development are described in tabl
 **-o**, **--output**            | [path]             | Specify the output file path
 **-p**, **--platform**          | desktop/mobile/all | Select the target platform(s)
 **-a**, **--api**               | opengl/vulkan/all  | Specify the target graphics API
-**-O**, **--optimize**          | N/A                | Optimize compiled material for performance
-**-S**, **--optimize-size**     | N/A                | Optimize compiled material for size and performance
-**-E**, **--preprocessor-only** | N/A                | Optimize compiled material by running only the preprocessor
+**-S**, **--optimize-size**     | N/A                | Optimize compiled material for size instead of just performance
 **-r**, **--reflect**           | parameters         | Outputs the specified metadata as JSON
 **-v**, **--variant-filter**    | [variant]          | Filters out the specified, comma-separated variants
 [Table [matcFlags]: List of `matc` flags]
@@ -1395,7 +1414,7 @@ appropriate target platform. For instance, to compile a material package for And
 the following command:
 
 ```text
-$ matc -p mobile -O -o ./materials/bin/car_paint.filamat ./materials/src/car_paint.mat
+$ matc -p mobile -o ./materials/bin/car_paint.filamat ./materials/src/car_paint.mat
 ```
 
 ### --api
@@ -1406,28 +1425,14 @@ only Vulkan capable devices, you can reduce the size of the material packages by
 the set of Vulkan shaders:
 
 ```text
-$ matc -a vulkan -O -o ./materials/bin/car_paint.filamat ./materials/src/car_paint.mat
+$ matc -a vulkan -o ./materials/bin/car_paint.filamat ./materials/src/car_paint.mat
 ```
-
-### --optimize
-
-This flag runs a separate optimization pass on the compiled material. This optimization pass applies
-many optimization techniques to attempt to make the generated shaders faster to compile and execute
-at runtime. In some cases using this flag might increase the size of the compiled material file.
-It is recommended to use this flag when compiling your application in release mode.
 
 ### --optimize-size
 
-This flag is similar to `--optimize` but applies fewer optimization techniques to try and keep the
-final material as small as possible. If the compiled material is deemed too large with `--optimize`,
-using this flag might be a good compromise between runtime performance and size.
-
-### --preprocessor-only
-
-This flags optimizes the compiled material by running only the preprocessor on the generated
-shaders. This flag may result in compiled materials that are smaller than with `--optimize-size`.
-This flag is only recommended if the size of the compiled material is more important than runtime
-performance and if `--optimize-size` does not deliver satisfactory results.
+This flag applies fewer optimization techniques to try and keep the final material as small as
+possible. If the compiled material is deemed too large by default, using this flag might be
+a good compromise between runtime performance and size.
 
 ### --reflect
 

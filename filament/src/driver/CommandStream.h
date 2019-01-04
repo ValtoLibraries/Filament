@@ -1,3 +1,5 @@
+#include <utility>
+
 /*
  * Copyright (C) 2018 The Android Open Source Project
  *
@@ -66,7 +68,7 @@ class CommandBase {
 protected:
     using Execute = Dispatcher::Execute;
 
-    constexpr CommandBase(Execute execute) noexcept : mExecute(execute) {}
+    constexpr explicit CommandBase(Execute execute) noexcept : mExecute(execute) {}
 
 public:
     // alignment of all Commands in the CommandStream
@@ -141,7 +143,7 @@ struct CommandType<void (Driver::*)(ARGS...)> {
         }
 
         // A command can be moved
-        inline explicit Command(Command&& rhs) = default;
+        inline Command(Command&& rhs) noexcept = default;
 
         template<typename... A>
         inline explicit constexpr Command(Execute execute, A&& ... args)
@@ -160,11 +162,11 @@ struct CommandType<void (Driver::*)(ARGS...)> {
 
 class CustomCommand : public CommandBase {
     std::function<void()> mCommand;
-    static void execute(Driver&, CommandBase* self, intptr_t* next) noexcept;
+    static void execute(Driver&, CommandBase* base, intptr_t* next) noexcept;
 public:
-    inline explicit CustomCommand(CustomCommand&& rhs) = default;
-    inline CustomCommand(const std::function<void()>& cmd)
-            : CommandBase(execute), mCommand(cmd) { }
+    inline CustomCommand(CustomCommand&& rhs) = default;
+    inline explicit CustomCommand(std::function<void()> cmd)
+            : CommandBase(execute), mCommand(std::move(cmd)) { }
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -175,39 +177,8 @@ class NoopCommand : public CommandBase {
         *next = static_cast<NoopCommand*>(self)->mNext;
     }
 public:
-    inline constexpr NoopCommand(void* next) noexcept
+    inline constexpr explicit NoopCommand(void* next) noexcept
             : CommandBase(execute), mNext(size_t((char *)next - (char *)this)) { }
-};
-
-// ------------------------------------------------------------------------------------------------
-
-template<typename ConcreteDriver>
-class ConcreteDispatcher final : public Dispatcher {
-public:
-    // initialize the dispatch table
-    ConcreteDispatcher(ConcreteDriver* driver) noexcept {
-#define DECL_DRIVER_API_SYNCHRONOUS(RetType, methodName, paramsDecl, params)
-#define DECL_DRIVER_API(methodName, paramsDecl, params)                 methodName##_ = methodName;
-#define DECL_DRIVER_API_RETURN(RetType, methodName, paramsDecl, params) methodName##_ = methodName;
-#include "driver/DriverAPI.inc"
-    }
-private:
-#define DECL_DRIVER_API_SYNCHRONOUS(RetType, methodName, paramsDecl, params)
-#define DECL_DRIVER_API(methodName, paramsDecl, params)                                         \
-    static void methodName(Driver& driver, CommandBase* base, intptr_t* next) {                 \
-        using Type = CommandType<decltype(&Driver::methodName)>;                                \
-        using Cmd = typename Type::template Command<&Driver::methodName>;                       \
-        ConcreteDriver& concreteDriver = static_cast<ConcreteDriver&>(driver);                  \
-        Cmd::execute(&ConcreteDriver::methodName, concreteDriver, base, next);                  \
-     }
-#define DECL_DRIVER_API_RETURN(RetType, methodName, paramsDecl, params)                         \
-    static void methodName(Driver& driver, CommandBase* base, intptr_t* next) {                 \
-        using Type = CommandType<decltype(&Driver::methodName)>;                                \
-        using Cmd = typename Type::template Command<&Driver::methodName>;                       \
-        ConcreteDriver& concreteDriver = static_cast<ConcreteDriver&>(driver);                  \
-        Cmd::execute(&ConcreteDriver::methodName, concreteDriver, base, next);                  \
-     }
-#include "driver/DriverAPI.inc"
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -258,7 +229,7 @@ public:
 #include "driver/DriverAPI.inc"
 
 public:
-    CommandStream() noexcept { }
+    CommandStream() noexcept = default;
     CommandStream(Driver& driver, CircularBuffer& buffer) noexcept;
 
     // This is for debugging only. Currently CircularBuffer can only be written from a

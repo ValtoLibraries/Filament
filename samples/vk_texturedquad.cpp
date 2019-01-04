@@ -34,6 +34,8 @@
 #include <cmath>
 #include <stdint.h>
 
+#include "generated/resources/resources.h"
+
 using namespace filament;
 using utils::Entity;
 using utils::EntityManager;
@@ -68,11 +70,7 @@ static constexpr uint16_t QUAD_INDICES[6] = {
     3, 2, 1,
 };
 
-static constexpr uint8_t BAKED_TEXTURE_PACKAGE[] = {
-    #include "generated/material/bakedTexture.inc"
-};
-
-int main() {
+int main(int argc, char** argv) {
     Config config;
     config.title = "texturedquad";
     config.backend = Engine::Backend::VULKAN;
@@ -81,14 +79,13 @@ int main() {
     auto setup = [&app](Engine* engine, View* view, Scene* scene) {
 
         // Load texture
-        Path path = Path::getCurrentExecutable().getParent() +
-                "textures/Moss_01/Moss_01_Color.png";
+        Path path = FilamentApp::getRootPath() + "textures/Moss_01/Moss_01_Color.png";
         if (!path.exists()) {
             std::cerr << "The texture " << path << " does not exist" << std::endl;
             exit(1);
         }
         int w, h, n;
-        unsigned char* data = stbi_load(path.getAbsolutePath().c_str(), &w, &h, &n, 4);
+        unsigned char* data = stbi_load(path.c_str(), &w, &h, &n, 4);
         if (data == nullptr) {
             std::cerr << "The texture " << path << " could not be loaded" << std::endl;
             exit(1);
@@ -130,7 +127,7 @@ int main() {
         app.ib->setBuffer(*engine,
                 IndexBuffer::BufferDescriptor(QUAD_INDICES, 12, nullptr));
         app.mat = Material::Builder()
-                .package((void*) BAKED_TEXTURE_PACKAGE, sizeof(BAKED_TEXTURE_PACKAGE))
+                .package(RESOURCES_BAKEDTEXTURE_DATA, RESOURCES_BAKEDTEXTURE_SIZE)
                 .build(*engine);
         app.matInstance = app.mat->createInstance();
         app.matInstance->setParameter("albedo", app.tex, sampler);
@@ -168,4 +165,6 @@ int main() {
     });
 
     FilamentApp::get().run(config, setup, cleanup);
+
+    return 0;
 }

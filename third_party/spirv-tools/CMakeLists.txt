@@ -28,8 +28,9 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 if (APPLE)
   set(CMAKE_MACOSX_RPATH ON)
 endif (APPLE)
-set(SPIRV_SKIP_EXECUTABLES ON)
-set(SPIRV_SKIP_TESTS ON)
+set(SPIRV_SKIP_EXECUTABLES_OPTION ON)
+set(SPIRV_SKIP_TESTS_OPTION ON)
+set(SKIP_SPIRV_TOOLS_INSTALL ON)
 # End Filament specific changes
 
 project(spirv-tools)
@@ -39,6 +40,9 @@ project(spirv-tools)
 set(SPIRV_TOOLS "SPIRV-Tools")
 
 include(GNUInstallDirs)
+# Filament specific changes
+#include(cmake/setup_build.cmake)
+# End Filament specific changes
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -56,6 +60,11 @@ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Android")
   set(SPIRV_TIMER_ENABLED ON)
 elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "FreeBSD")
   add_definitions(-DSPIRV_FREEBSD)
+# Filament specific changes
+elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Emscripten")
+  # Allow spirv-tools to compile with Emscripten
+  add_definitions(-DSPIRV_EMSCRIPTEN)
+# End Filament specific changes
 else()
   message(FATAL_ERROR "Your platform '${CMAKE_SYSTEM_NAME}' is not supported!")
 endif()
@@ -69,9 +78,9 @@ if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
   set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
-# Filament changes
-option(SKIP_SPIRV_TOOLS_INSTALL "Skip installation" ON)
-# end changes
+# Filament specific changes
+#option(SKIP_SPIRV_TOOLS_INSTALL "Skip installation" ${SKIP_SPIRV_TOOLS_INSTALL})
+# End Filament specific changes
 if(NOT ${SKIP_SPIRV_TOOLS_INSTALL})
   set(ENABLE_SPIRV_TOOLS_INSTALL ON)
 endif()
@@ -83,7 +92,11 @@ if(("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU") OR (("${CMAKE_CXX_COMPILER_ID}" MA
   set(COMPILER_IS_LIKE_GNU TRUE)
 endif()
 if(${COMPILER_IS_LIKE_GNU})
-  set(SPIRV_WARNINGS -Wall -Wextra -Wnon-virtual-dtor -Wno-missing-field-initializers -Wno-self-assign)
+  set(SPIRV_WARNINGS -Wall -Wextra -Wnon-virtual-dtor -Wno-missing-field-initializers)
+
+  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    set(SPIRV_WARNINGS ${SPIRV_WARNINGS} -Wno-self-assign)
+  endif()
 
   option(SPIRV_WARN_EVERYTHING "Enable -Weverything" ${SPIRV_WARN_EVERYTHING})
   if(${SPIRV_WARN_EVERYTHING})
@@ -201,11 +214,13 @@ else()
 endif()
 
 # Defaults to OFF if the user didn't set it.
+# Filament specific changes
 option(SPIRV_SKIP_EXECUTABLES
   "Skip building the executable and tests along with the library"
-  ${SPIRV_SKIP_EXECUTABLES})
+  ${SPIRV_SKIP_EXECUTABLES_OPTION})
 option(SPIRV_SKIP_TESTS
-  "Skip building tests along with the library" ${SPIRV_SKIP_TESTS})
+  "Skip building tests along with the library" ${SPIRV_SKIP_TESTS_OPTION})
+# End Filament specific changes
 if ("${SPIRV_SKIP_EXECUTABLES}")
   set(SPIRV_SKIP_TESTS ON)
 endif()
@@ -226,8 +241,10 @@ endif()
 add_subdirectory(source)
 add_subdirectory(tools)
 
-add_subdirectory(test)
-add_subdirectory(examples)
+# Filament specific changes
+#add_subdirectory(test)
+#add_subdirectory(examples)
+# End Filament specific changes
 
 if(ENABLE_SPIRV_TOOLS_INSTALL)
   install(

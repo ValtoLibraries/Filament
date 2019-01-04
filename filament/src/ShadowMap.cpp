@@ -22,6 +22,8 @@
 #include "details/ShadowMap.h"
 #include "details/Scene.h"
 
+#include <private/filament/SibGenerator.h>
+
 #include <filament/driver/DriverEnums.h>
 
 #include <limits>
@@ -37,7 +39,7 @@ namespace details {
 // do this only if depth-clamp is available
 static constexpr bool USE_DEPTH_CLAMP = false;
 
-// currently disabled because it creates shadow acnee problems at a distance
+// currently disabled because it creates shadow acne problems at a distance
 static constexpr bool ENABLE_LISPSM = true;
 
 ShadowMap::ShadowMap(FEngine& engine) noexcept :
@@ -99,7 +101,7 @@ void ShadowMap::prepare(DriverApi& driver, SamplerBuffer& sb) noexcept {
     s.compareFunc = SamplerCompareFunc::LE;
     s.compareMode = SamplerCompareMode::COMPARE_TO_TEXTURE;
     s.depthStencil = true;
-    sb.setSampler(FEngine::PerViewSib::SHADOW_MAP, { mShadowMapHandle, s });
+    sb.setSampler(PerViewSib::SHADOW_MAP, { mShadowMapHandle, s });
 }
 
 void ShadowMap::terminate(DriverApi& driverApi) noexcept {
@@ -454,7 +456,7 @@ mat4f ShadowMap::applyLISPSM(CameraInfo const& camera, float dzn, float dzf, mat
         };
 
         const mat4f Wp = warpFrustum(nopt, nopt + d);
-        const mat4f Wv = mat4f::translate(float4{ -p, 1 });
+        const mat4f Wv = mat4f::translate(-p);
         W = Wp * Wv;
     }
     return W;

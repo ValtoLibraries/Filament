@@ -130,13 +130,11 @@ class FLightManager;
  *
  * 2. Use the smallest possible falloff distance for point and spot lights.
  *    Performance is very sensitive to overlapping lights. The falloff distance essentially
- *    defines a sphere of influence for the light, so try to position point and and spot lights
+ *    defines a sphere of influence for the light, so try to position point and spot lights
  *    such that they don't overlap too much.
  *
  *    On the other hand, a scene can contain hundreds of non overlapping lights without
  *    incurring a significant overhead.
- *
- * 3. Use Type.Static Lights as much as possible.
  *
  */
 class UTILS_PUBLIC LightManager : public FilamentAPI {
@@ -193,7 +191,7 @@ public:
 
         /** Distance from the camera after which shadows are clipped. this is used to clip
          * shadows that are too far and wouldn't contribute to the scene much, improving
-         * performance and quality. This valie is always positive.
+         * performance and quality. This value is always positive.
          * Use 0.0f to use the camera far distance.
          */
         float shadowFar = 0.0f;
@@ -421,7 +419,7 @@ public:
          * @error if exceptions are disabled and an error occurs, this function is a no-op.
          *        Success can be checked by looking at the return value.
          *
-         * @exception utils::PostConditionPanic if a runtime error occured, such as running out of
+         * @exception utils::PostConditionPanic if a runtime error occurred, such as running out of
          *            memory or other resources.
          * @exception utils::PreConditionPanic if a parameter to a builder function was invalid.
          */
@@ -437,13 +435,45 @@ public:
     static constexpr float EFFICIENCY_FLUORESCENT  = 0.0878f;   //!< Typical efficiency of a fluorescent light bulb (8.7%)
     static constexpr float EFFICIENCY_LED          = 0.1171f;   //!< Typical efficiency of a LED light bulb (11.7%)
 
+    Type getType(Instance i) const noexcept;
+
+    /**
+     * Helper function that returns if a light is a directional light
+     *
+     * @param i     Instance of the component obtained from getInstance().
+     * @return      true is this light is a type of directional light
+     */
+    inline bool isDirectional(Instance i) const noexcept {
+        Type type = getType(i);
+        return type == Type::DIRECTIONAL || type == Type::SUN;
+    }
+
+    /**
+     * Helper function that returns if a light is a point light
+     *
+     * @param i     Instance of the component obtained from getInstance().
+     * @return      true is this light is a type of point light
+     */
+    inline bool isPointLight(Instance i) const noexcept {
+        return getType(i) == Type::POINT;
+    }
+
+    /**
+     * Helper function that returns if a light is a spot light
+     *
+     * @param i     Instance of the component obtained from getInstance().
+     * @return      true is this light is a type of spot light
+     */
+    inline bool isSpotLight(Instance i) const noexcept {
+        Type type = getType(i);
+        return type == Type::SPOT || type == Type::FOCUSED_SPOT;
+    }
+
     /**
      * Dynamically updates the light's position.
      *
      * @param i        Instance of the component obtained from getInstance().
      * @param position Light's position in world space. The default is at the origin.
-     *
-     * @note ignored for Mode.STATIC lights.
      *
      * @see Builder.position()
      */
@@ -459,8 +489,6 @@ public:
      * @param direction Light's direction in world space. Should be a unit vector.
      *                  The default is {0,-1,0}.
      *
-     * @note ignored for Mode.STATIC lights.
-     *
      * @see Builder.direction()
      */
     void setDirection(Instance i, const math::float3& direction) noexcept;
@@ -474,8 +502,6 @@ public:
      * @param i     Instance of the component obtained from getInstance().
      * @param color Color of the light specified in the linear sRGB color-space.
      *              The default is white {1,1,1}.
-     *
-     * @note ignored for Mode.STATIC lights.
      *
      * @see Builder.color(), getInstance()
      */
@@ -497,8 +523,6 @@ public:
      *                  - For point lights and spot lights, it specifies the luminous power
      *                  in *lumen*.
      *
-     * @note ignored for Mode.STATIC lights.
-     *
      * @see Builder.intensity()
      */
     void setIntensity(Instance i, float intensity) noexcept;
@@ -519,8 +543,6 @@ public:
      *         Halogen  |  7.0%
      *             LED  |  8.7%
      *     Fluorescent  | 10.7%
-     *
-     * @note ignored for Mode.STATIC lights.
      *
      * @see Builder.intensity(float watts, float efficiency)
      */
@@ -545,8 +567,6 @@ public:
      * @param i      Instance of the component obtained from getInstance().
      * @param radius falloff distance in world units. Default is 1 meter.
      *
-     * @note ignored for Mode.STATIC lights.
-     *
      * @see Builder.falloff()
      */
     void setFalloff(Instance i, float radius) noexcept;
@@ -564,8 +584,6 @@ public:
      * @param i     Instance of the component obtained from getInstance().
      * @param inner inner cone angle in *radians* between 0 and @f$ \pi @f$
      * @param outer outer cone angle in *radians* between 0 and @f$ \pi @f$
-     *
-     * @note ignored for Mode.STATIC lights.
      *
      * @see Builder.spotLightCone()
      */

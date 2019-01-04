@@ -20,6 +20,7 @@
 #define TNT_FILAMENT_RENDERER_H
 
 #include <filament/FilamentAPI.h>
+#include <filament/Viewport.h>
 
 #include <utils/compiler.h>
 
@@ -137,6 +138,56 @@ public:
     void render(View const* view);
 
     /**
+     * Flags used to configure the behavior of mirrorFrame().
+     *
+     * @see
+     * mirrorFrame()
+     */
+    using MirrorFrameFlag = uint32_t;
+
+    /**
+     * Indicates that the dstSwapChain passed into mirrorFrame() should be
+     * committed after the frame has been mirrored.
+     *
+     * @see
+     * mirrorFrame()
+     */
+    static constexpr MirrorFrameFlag COMMIT = 0x1;
+    /**
+     * Indicates that the presentation time should be set on the dstSwapChain
+     * passed into mirrorFrame to the monotonic clock time when the frame is
+     * mirrored.
+     *
+     * @see
+     * mirrorFrame()
+     */
+    static constexpr MirrorFrameFlag SET_PRESENTATION_TIME = 0x2;
+    /**
+     * Indicates that the dstSwapChain passed into mirrorFrame() should be
+     * cleared to black before the frame is mirrored into the specified viewport.
+     *
+     * @see
+     * mirrorFrame()
+     */
+    static constexpr MirrorFrameFlag CLEAR = 0x4;
+
+    /**
+     * Mirror the currently rendered view to the indicated swap chain, using the
+     * indicated source and destination rectangle.
+     *
+     * @param dstSwapChain The swap chain into which the frame should be mirrored.
+     * @param dstViewport The destination rectangle in which to draw the view.
+     * @param srcViewport The source rectangle to be mirrored.
+     * @param flags One or more MirrorFrameFlag behavior configuration flags.
+     *
+     * @remark
+     * mirrorFrame() should be called after a frame is rendered using render()
+     * but before endFrame() is called.
+     */
+    void mirrorFrame(SwapChain* dstSwapChain, Viewport const& dstViewport, Viewport const& srcViewport,
+                     uint32_t flags=0);
+
+    /**
      * Read-back the content of the SwapChain associated with this Renderer.
      *
      * @param xoffset   Left offset of the sub-region to read back.
@@ -165,7 +216,7 @@ public:
      *  +--------------------+
      *  |                    |                .stride         .alignment
      *  |                    |         ----------------------->-->
-     *  |                    |         O----------------------+--+   low adresses
+     *  |                    |         O----------------------+--+   low addresses
      *  |                    |         |          |           |  |
      *  |             w      |         |          | .top      |  |
      *  |       <--------->  |         |          V           |  |
@@ -175,7 +226,7 @@ public:
      *  +------>|     v   |  |         +---->|         |      |  |
      *  |       +.........+  |         |     +.........+      |  |
      *  |            ^       |         |                      |  |
-     *  |          y |       |         +----------------------+--+  high adresses
+     *  |          y |       |         +----------------------+--+  high addresses
      *  O------------+-------+
      *
      *
@@ -237,6 +288,63 @@ public:
      * beginFrame()
      */
     void endFrame();
+
+    /**
+     * Returns the time in second of the last call to beginFrame(). This value is constant for all
+     * views rendered during a frame. The epoch is set with resetUserTime().
+     *
+     * In materials, this value can be queried using `vec4 getUserTime()`. The value returned
+     * is a highp vec4 encoded as follows:
+     *
+     *      time.x = (float)Renderer.getUserTime();
+     *      time.y = Renderer.getUserTime() - time.x;
+     *
+     * It follows that the following invariants are true:
+     *
+     *      (double)time.x + (double)time.y == Renderer.getUserTime()
+     *      time.x == (float)Renderer.getUserTime()
+     *
+     * This encoding allows the shader code to perform high precision (i.e. double) time
+     * calculations when needed despite the lack of double precision in the shader, for e.g.:
+     *
+     *      To compute (double)time * vertex in the material, use the following construct:
+     *
+     *              vec3 result = time.x * vertex + time.y * vertex;
+     *
+     *
+     * Most of the time, high precision computations are not required, but be aware that the
+     * precision of time.x rapidly diminishes as time passes:
+     *
+     *          time    | precision
+     *          --------+----------
+     *          16.7s   |    us
+     *          4h39    |    ms
+     *         77h      |   1/60s
+     *
+     *
+     * In other words, it only possible to get microsecond accuracy for about 16s or millisecond
+     * accuracy for just under 5h.
+     *
+     * This problem can be mitigated by calling resetUserTime(), or using high precision time as
+     * described above.
+     *
+     * @return The time is seconds since resetUserTime() was last called.
+     *
+     * @see
+     * resetUserTime()
+     */
+    double getUserTime() const;
+
+    /**
+     * Sets the user time epoch to now, i.e. resets the user time to zero.
+     *
+     * Use this method used to keep the precision of time high in materials, in practice it should
+     * be called at least when the application is paused, e.g. Activity.onPause() in Android.
+     *
+     * @see
+     * getUserTime()
+     */
+    void resetUserTime();
 };
 
 } // namespace filament

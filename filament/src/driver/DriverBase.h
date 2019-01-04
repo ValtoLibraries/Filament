@@ -1,3 +1,5 @@
+#include <utility>
+
 /*
  * Copyright (C) 2015 The Android Open Source Project
  *
@@ -29,7 +31,6 @@
 
 #include "driver/Driver.h"
 #include "driver/SamplerBuffer.h"
-#include "driver/UniformBuffer.h"
 
 namespace filament {
 
@@ -48,16 +49,13 @@ struct HwBase {
 struct HwVertexBuffer : public HwBase {
     static constexpr size_t MAX_ATTRIBUTE_BUFFER_COUNT = Driver::MAX_ATTRIBUTE_BUFFER_COUNT;
 
-    Driver::AttributeArray attributes;    // 8*6
+    Driver::AttributeArray attributes;    // 8*8
     uint32_t vertexCount;                 //   4
     uint8_t bufferCount;                  //   1
     uint8_t attributeCount;               //   1
-    uint8_t padding[2];                   //   2 -> 56 bytes
+    uint8_t padding[2]{};                 //   2 -> 56 bytes
 
-    HwVertexBuffer(
-            uint8_t bufferCount,
-            uint8_t attributeCount,
-            uint32_t elementCount,
+    HwVertexBuffer(uint8_t bufferCount, uint8_t attributeCount, uint32_t elementCount,
             Driver::AttributeArray const& attributes) noexcept
             : attributes(attributes),
               vertexCount(elementCount),
@@ -85,11 +83,11 @@ struct HwRenderPrimitive : public HwBase {
 };
 
 struct HwProgram : public HwBase {
-#if defined(NDEBUG)
-    HwProgram(const utils::CString& name) noexcept { }
-#else
-    explicit HwProgram(const utils::CString& name) noexcept : name(name) { }
+#ifndef NDEBUG
+    explicit HwProgram(utils::CString name) noexcept : name(std::move(name)) { }
     utils::CString name;
+#else
+    explicit HwProgram(const utils::CString&) noexcept { }
 #endif
 };
 
@@ -100,8 +98,6 @@ struct HwSamplerBuffer : public HwBase {
 };
 
 struct HwUniformBuffer : public HwBase {
-    explicit HwUniformBuffer(size_t size) noexcept : ub(size) { }
-    UniformBuffer ub;
 };
 
 struct HwTexture : public HwBase {
@@ -119,24 +115,23 @@ struct HwTexture : public HwBase {
 };
 
 struct HwRenderTarget : public HwBase {
-    HwRenderTarget() = default;
-    HwRenderTarget(uint32_t w, uint32_t h) : width(w), height(h) {}
+    HwRenderTarget(uint32_t w, uint32_t h) : width(w), height(h) { }
     uint32_t width;
     uint32_t height;
 };
 
 struct HwFence : public HwBase {
-    driver::ExternalContext::Fence* fence;
+    driver::Platform::Fence* fence = nullptr;
 };
 
 struct HwSwapChain : public HwBase {
-    driver::ExternalContext::SwapChain* swapChain;
+    driver::Platform::SwapChain* swapChain = nullptr;
 };
 
 struct HwStream : public HwBase {
     HwStream() = default;
-    explicit HwStream(driver::ExternalContext::Stream* stream) : stream(stream) { }
-    driver::ExternalContext::Stream* stream = nullptr;
+    explicit HwStream(driver::Platform::Stream* stream) : stream(stream) { }
+    driver::Platform::Stream* stream = nullptr;
     uint32_t width = 0;
     uint32_t height = 0;
 };

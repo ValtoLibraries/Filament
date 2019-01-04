@@ -26,6 +26,8 @@
 // NOTE: We only need Renderer.h here because the definition of some FRenderer methods are here
 #include "details/Renderer.h"
 
+#include <private/filament/UibGenerator.h>
+
 #include <utils/JobSystem.h>
 #include <utils/Systrace.h>
 
@@ -44,7 +46,7 @@ UTILS_ALWAYS_INLINE // this allows the compiler to devirtualize some calls
 inline              // this removes the code from the compilation unit
 void RenderPass::render(
         FEngine& engine, JobSystem& js,
-        FScene::RenderableSoa const& soa, Range<uint32_t> vr,
+        FScene& scene, Range<uint32_t> vr,
         uint32_t commandTypeFlags, RenderFlags renderFlags,
         const CameraInfo& camera, Viewport const& viewport,
         GrowingSlice<Command>& commands) noexcept {
@@ -54,12 +56,14 @@ void RenderPass::render(
     // trace the number of visible renderables
     SYSTRACE_VALUE32("visibleRenderables", vr.size());
 
+    FScene::RenderableSoa const& soa = scene.getRenderableData();
+
     // up-to-date summed primitive counts needed for generateCommands()
     updateSummedPrimitiveCounts(const_cast<FScene::RenderableSoa&>(soa), vr);
 
     // compute how much maximum storage we need for this pass
     uint32_t growBy = FScene::getPrimitiveCount(soa, vr.last);
-    // double the color pass for transparents that need to render twice
+    // double the color pass for transparent objects that need to render twice
     const bool colorPass  = bool(commandTypeFlags & CommandTypeFlags::COLOR);
     const bool depthPass  = bool(commandTypeFlags & (CommandTypeFlags::DEPTH | CommandTypeFlags::SHADOW));
     growBy *= uint32_t(colorPass * 2 + depthPass);
@@ -98,7 +102,7 @@ void RenderPass::render(
     beginRenderPass(driver, viewport, camera);
 
     // Now, execute all commands
-    RenderPass::recordDriverCommands(driver, commands);
+    RenderPass::recordDriverCommands(driver, scene, commands);
 
     endRenderPass(driver, viewport);
 
@@ -111,11 +115,14 @@ void RenderPass::render(
 UTILS_NOINLINE // no need to be inlined
 void RenderPass::recordDriverCommands(
         FEngine::DriverApi& UTILS_RESTRICT driver,  // using restrict here is very important
+        FScene& UTILS_RESTRICT scene,
         Slice<Command> const& commands) noexcept {
     SYSTRACE_CALL();
 
     if (!commands.empty()) {
-        FMaterialInstance const* UTILS_RESTRICT previousMi = nullptr;
+        Driver::PipelineState pipeline;
+        Handle<HwUniformBuffer> uboHandle = scene.getRenderableUBO();
+        FMaterialInstance const* UTILS_RESTRICT mi = nullptr;
         FMaterial const* UTILS_RESTRICT ma = nullptr;
         Command const* UTILS_RESTRICT c;
         for (c = commands.cbegin(); c->key != -1LLU; ++c) {
@@ -124,22 +131,23 @@ void RenderPass::recordDriverCommands(
              */
 
             // per-renderable uniform
-            PrimitiveInfo const& UTILS_RESTRICT info = c->primitive;
-            driver.bindUniforms(BindingPoints::PER_RENDERABLE, info.perRenderableUniforms);
-            if (info.perRenderableBones) {
-                driver.bindUniforms(BindingPoints::PER_RENDERABLE_BONES, info.perRenderableBones);
-            }
-
-            FMaterialInstance const* const UTILS_RESTRICT mi = info.mi;
-            if (UTILS_UNLIKELY(mi != previousMi)) {
+            const PrimitiveInfo info = c->primitive;
+            pipeline.rasterState = info.rasterState;
+            if (UTILS_UNLIKELY(mi != info.mi)) {
                 // this is always taken the first time
-                previousMi = mi;
-                mi->use(driver);
+                mi = info.mi;
+                pipeline.polygonOffset = mi->getPolygonOffset();
                 ma = mi->getMaterial();
+                mi->use(driver);
             }
 
-            Handle<HwProgram> const ph = ma->getProgram(info.materialVariant.key);
-            driver.draw(ph, info.rasterState, info.primitiveHandle);
+            pipeline.program = ma->getProgram(info.materialVariant.key);
+            size_t offset = info.index * sizeof(PerRenderableUib);
+            if (info.perRenderableBones) {
+                driver.bindUniformBuffer(BindingPoints::PER_RENDERABLE_BONES, info.perRenderableBones);
+            }
+            driver.bindUniformBufferRange(BindingPoints::PER_RENDERABLE, uboHandle, offset, sizeof(PerRenderableUib));
+            driver.draw(pipeline, info.primitiveHandle);
         }
 
         SYSTRACE_VALUE32("commandCount", c - commands.cbegin());
@@ -161,7 +169,7 @@ void RenderPass::setupColorCommand(Command& cmdDraw, bool hasDepthPass,
     uint64_t keyBlending = cmdDraw.key;
     keyBlending &= ~(PASS_MASK | BLENDING_MASK);
     keyBlending |= uint64_t(Pass::BLENDED);
-    keyBlending |= makeField(ma->getBlendingMode(), BLENDING_MASK, BLENDING_SHIFT);
+    keyBlending |= makeField(ma->getRenderBlendingMode(), BLENDING_MASK, BLENDING_SHIFT);
 
     uint64_t keyDraw = cmdDraw.key;
     keyDraw &= ~(PASS_MASK | BLENDING_MASK | MATERIAL_MASK);
@@ -267,10 +275,11 @@ void RenderPass::generateCommandsImpl(uint32_t,
     auto const* const UTILS_RESTRICT soaWorldAABBCenter = soa.data<FScene::WORLD_AABB_CENTER>();
     auto const* const UTILS_RESTRICT soaVisibility      = soa.data<FScene::VISIBILITY_STATE>();
     auto const* const UTILS_RESTRICT soaPrimitives      = soa.data<FScene::PRIMITIVES>();
-    auto const* const UTILS_RESTRICT soaUbh             = soa.data<FScene::UBH>();
     auto const* const UTILS_RESTRICT soaBonesUbh        = soa.data<FScene::BONES_UBH>();
 
     const bool hasShadowing = renderFlags & HAS_SHADOWING;
+    const bool inverseFrontFaces = renderFlags & HAS_INVERSE_FRONT_FACES;
+
     Variant materialVariant;
     materialVariant.setDirectionalLighting(renderFlags & HAS_DIRECTIONAL_LIGHT);
     materialVariant.setDynamicLighting(renderFlags & HAS_DYNAMIC_LIGHTING);
@@ -285,6 +294,7 @@ void RenderPass::generateCommandsImpl(uint32_t,
     cmdDepth.primitive.rasterState.depthWrite = true;
     cmdDepth.primitive.rasterState.depthFunc = Driver::RasterState::DepthFunc::L;
     cmdDepth.primitive.rasterState.alphaToCoverage = false;
+    cmdDepth.primitive.rasterState.inverseFrontFaces = inverseFrontFaces;
 
     for (uint32_t i = range.first; i < range.last; ++i) {
         // Signed distance from camera to object's center. Positive distances are in front of
@@ -318,7 +328,7 @@ void RenderPass::generateCommandsImpl(uint32_t,
         const uint32_t distanceBits = reinterpret_cast<uint32_t&>(distance);
 
         cmdColor.key = makeField(soaVisibility[i].priority, PRIORITY_MASK, PRIORITY_SHIFT);
-        cmdColor.primitive.perRenderableUniforms = soaUbh[i];
+        cmdColor.primitive.index = (uint16_t)i;
         cmdColor.primitive.perRenderableBones = soaBonesUbh[i];
         materialVariant.setShadowReceiver(soaVisibility[i].receiveShadows & hasShadowing);
         materialVariant.setSkinning(soaVisibility[i].skinning);
@@ -328,7 +338,7 @@ void RenderPass::generateCommandsImpl(uint32_t,
         cmdDepth.key = uint64_t(Pass::DEPTH);
         cmdDepth.key |= makeField(soaVisibility[i].priority, PRIORITY_MASK, PRIORITY_SHIFT);
         cmdDepth.key |= makeField(distanceBits, DISTANCE_BITS_MASK, DISTANCE_BITS_SHIFT);
-        cmdDepth.primitive.perRenderableUniforms = soaUbh[i];
+        cmdDepth.primitive.index = (uint16_t)i;
         cmdDepth.primitive.perRenderableBones = soaBonesUbh[i];
         cmdDepth.primitive.materialVariant.setSkinning(soaVisibility[i].skinning);
 
@@ -347,6 +357,8 @@ void RenderPass::generateCommandsImpl(uint32_t,
                 cmdColor.primitive.primitiveHandle = primitive.getHwHandle();
                 cmdColor.primitive.materialVariant = materialVariant;
                 RenderPass::setupColorCommand(cmdColor, depthPass, mi);
+                // Inverting front faces applies to all renderables and primitives in the view
+                cmdColor.primitive.rasterState.inverseFrontFaces = inverseFrontFaces;
 
                 const bool blendPass = Pass(cmdColor.key & PASS_MASK) == Pass::BLENDED;
                 if (blendPass) {
@@ -473,7 +485,7 @@ void RenderPass::updateSummedPrimitiveCounts(
 // ------------------------------------------------------------------------------------------------
 
 FRenderer::ColorPass::ColorPass(const char* name,
-        JobSystem& js, JobSystem::Job* jobFroxelize,FView* view, Handle<HwRenderTarget> const rth)
+        JobSystem& js, JobSystem::Job* jobFroxelize, FView& view, Handle<HwRenderTarget> const rth)
         : RenderPass(name), js(js), jobFroxelize(jobFroxelize), view(view), rth(rth) {
 }
 
@@ -481,8 +493,8 @@ void FRenderer::ColorPass::beginRenderPass(
         driver::DriverApi& driver, Viewport const& viewport, const CameraInfo& camera) noexcept {
     // wait for froxelization to finish
     // (this could even be a special command between the depth and color passes)
-    js.wait(jobFroxelize);
-    view->commitFroxels(driver);
+    js.waitAndRelease(jobFroxelize);
+    view.commitFroxels(driver);
 
     // We won't need the depth or stencil buffers after this pass.
     RenderPassParams params = {};
@@ -491,16 +503,16 @@ void FRenderer::ColorPass::beginRenderPass(
     params.bottom = viewport.bottom;
     params.width = viewport.width;
     params.height = viewport.height;
-    params.clearColor = view->getClearColor();
+    params.clearColor = view.getClearColor();
     params.clearDepth = 1.0;
 
-    if (view->hasPostProcessPass()) {
+    if (view.hasPostProcessPass()) {
         // When using a post-process pass, composition of Views is done during the post-process
         // pass, which means it's NOT done here. For this reason, we need to clear the depth/stencil
         // buffers unconditionally. The color buffer must be cleared to what the user asked for,
         // since it's akin to a drawing command.
         // Also, all buffers can be invalidated before rendering.
-        if (view->getClearTargetColor()) {
+        if (view.getClearTargetColor()) {
             params.clear = TargetBufferFlags::ALL;
         } else {
             params.clear = TargetBufferFlags::DEPTH_AND_STENCIL;
@@ -508,14 +520,14 @@ void FRenderer::ColorPass::beginRenderPass(
         params.discardStart = TargetBufferFlags::ALL;
         driver.beginRenderPass(rth, params);
     } else {
-        params.discardStart = view->getDiscardedTargetBuffers();
-        if (view->getClearTargetColor()) {
+        params.discardStart = view.getDiscardedTargetBuffers();
+        if (view.getClearTargetColor()) {
             params.clear |= TargetBufferFlags::COLOR;
         }
-        if (view->getClearTargetDepth()) {
+        if (view.getClearTargetDepth()) {
             params.clear |= TargetBufferFlags::DEPTH;
         }
-        if (view->getClearTargetStencil()) {
+        if (view.getClearTargetStencil()) {
             params.clear |= TargetBufferFlags::STENCIL;
         }
         driver.beginRenderPass(rth, params);
@@ -526,7 +538,7 @@ void FRenderer::ColorPass::endRenderPass(DriverApi& driver, Viewport const& view
     driver.endRenderPass();
 
     // and we don't need the color buffer in the areas we don't use
-    if (view->hasPostProcessPass()) {
+    if (view.hasPostProcessPass()) {
         // discard parts of the color buffer we didn't render into
         const uint32_t large = std::numeric_limits<uint16_t>::max();
         driver.discardSubRenderTargetBuffers(rth, TargetBufferFlags::COLOR,
@@ -536,36 +548,33 @@ void FRenderer::ColorPass::endRenderPass(DriverApi& driver, Viewport const& view
     }
 }
 
-void FRenderer::ColorPass::renderColorPass(FEngine& engine, JobSystem& js,
-        Handle<HwRenderTarget> const rth, FView* view, Viewport const& scaledViewport,
+void FRenderer::ColorPass::renderColorPass(FEngine& engine,
+        JobSystem& js, JobSystem::Job* sync,
+        Handle<HwRenderTarget> const rth, FView& view, Viewport const& scaledViewport,
         GrowingSlice<Command>& commands) noexcept {
 
-    // start the froxelization immediately, it has no dependencies
-    JobSystem::Job* jobFroxelize = js.createJob(nullptr,
-            [&engine, view](JobSystem&, JobSystem::Job*) { view->froxelize(engine); });
-    js.run(jobFroxelize);
-
-    CameraInfo const& cameraInfo = view->getCameraInfo();
-    auto& soa = view->getScene()->getRenderableData();
-    auto vr = view->getVisibleRenderables();
+    CameraInfo const& cameraInfo = view.getCameraInfo();
+    auto& soa = view.getScene()->getRenderableData();
+    auto vr = view.getVisibleRenderables();
 
     // populate the RenderPrimitive array with the proper LOD
-    view->updatePrimitivesLod(engine, cameraInfo, soa, vr);
+    view.updatePrimitivesLod(engine, cameraInfo, soa, vr);
 
     DriverApi& driver = engine.getDriverApi();
-    view->prepareCamera(cameraInfo, scaledViewport);
-    view->commitUniforms(driver);
+    view.prepareCamera(cameraInfo, scaledViewport);
+    view.commitUniforms(driver);
 
     RenderPass::RenderFlags flags = 0;
-    if (view->hasShadowing())           flags |= RenderPass::HAS_SHADOWING;
-    if (view->hasDirectionalLight())    flags |= RenderPass::HAS_DIRECTIONAL_LIGHT;
-    if (view->hasDynamicLighting())     flags |= RenderPass::HAS_DYNAMIC_LIGHTING;
+    if (view.hasShadowing())               flags |= RenderPass::HAS_SHADOWING;
+    if (view.hasDirectionalLight())        flags |= RenderPass::HAS_DIRECTIONAL_LIGHT;
+    if (view.hasDynamicLighting())         flags |= RenderPass::HAS_DYNAMIC_LIGHTING;
+    if (view.isFrontFaceWindingInverted()) flags |= RenderPass::HAS_INVERSE_FRONT_FACES;
 
     CommandTypeFlags commandType;
-    switch (view->getDepthPrepass()) {
+    switch (view.getDepthPrepass()) {
         case View::DepthPrepass::DEFAULT:
             // TODO: better default strategy (can even change on a per-frame basis)
-#ifdef ANDROID
+#if defined(ANDROID) || defined(__EMSCRIPTEN__)
             commandType = COLOR;
 #else
             commandType = DEPTH_AND_COLOR;
@@ -579,9 +588,10 @@ void FRenderer::ColorPass::renderColorPass(FEngine& engine, JobSystem& js,
             break;
     }
 
-    ColorPass colorPass("ColorPass", js, jobFroxelize, view, rth);
+    ColorPass colorPass("ColorPass", js, sync, view, rth);
     driver.pushGroupMarker("Color Pass");
-    colorPass.render(engine, js, soa, vr, commandType, flags, cameraInfo, scaledViewport, commands);
+    colorPass.render(engine, js, *view.getScene(), vr, commandType, flags,
+            cameraInfo, scaledViewport, commands);
     driver.popGroupMarker();
 }
 
@@ -597,11 +607,11 @@ void FRenderer::ShadowPass::beginRenderPass(driver::DriverApi& driver, Viewport 
 }
 
 void FRenderer::ShadowPass::renderShadowMap(FEngine& engine, JobSystem& js,
-        FView* view, GrowingSlice<Command>& commands) noexcept {
+        FView& view, GrowingSlice<Command>& commands) noexcept {
 
-    auto& soa = view->getScene()->getRenderableData();
-    auto vr = view->getVisibleShadowCasters();
-    ShadowMap const& shadowMap = view->getShadowMap();
+    auto& soa = view.getScene()->getRenderableData();
+    auto vr = view.getVisibleShadowCasters();
+    ShadowMap const& shadowMap = view.getShadowMap();
     Viewport const& viewport = shadowMap.getViewport();
     FCamera const& camera = shadowMap.getCamera();
 
@@ -615,20 +625,21 @@ void FRenderer::ShadowPass::renderShadowMap(FEngine& engine, JobSystem& js,
     };
 
     // populate the RenderPrimitive array with the proper LOD
-    view->updatePrimitivesLod(engine, cameraInfo, soa, vr);
+    view.updatePrimitivesLod(engine, cameraInfo, soa, vr);
 
     driver::DriverApi& driver = engine.getDriverApi();
-    view->prepareCamera(cameraInfo, viewport);
-    view->commitUniforms(driver);
+    view.prepareCamera(cameraInfo, viewport);
+    view.commitUniforms(driver);
 
     RenderPass::RenderFlags flags = 0;
-    if (view->hasShadowing())           flags |= RenderPass::HAS_SHADOWING;
-    if (view->hasDirectionalLight())    flags |= RenderPass::HAS_DIRECTIONAL_LIGHT;
-    if (view->hasDynamicLighting())     flags |= RenderPass::HAS_DYNAMIC_LIGHTING;
+    if (view.hasShadowing())               flags |= RenderPass::HAS_SHADOWING;
+    if (view.hasDirectionalLight())        flags |= RenderPass::HAS_DIRECTIONAL_LIGHT;
+    if (view.hasDynamicLighting())         flags |= RenderPass::HAS_DYNAMIC_LIGHTING;
+    if (view.isFrontFaceWindingInverted()) flags |= RenderPass::HAS_INVERSE_FRONT_FACES;
 
     ShadowPass shadowPass("ShadowPass", shadowMap);
     driver.pushGroupMarker("Shadow map Pass");
-    shadowPass.render(engine, js, soa, vr, CommandTypeFlags::SHADOW, flags, cameraInfo, viewport, commands);
+    shadowPass.render(engine, js, *view.getScene(), vr, CommandTypeFlags::SHADOW, flags, cameraInfo, viewport, commands);
     driver.popGroupMarker();
 }
 

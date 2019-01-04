@@ -60,7 +60,7 @@ void DriverBase::scheduleDestroySlow(BufferDescriptor&& buffer) noexcept {
 // ------------------------------------------------------------------------------------------------
 
 /*
- * This array contains informations we might need about each texture internal formats.
+ * This array contains information we might need about each texture internal formats.
  *
  * All entries MUST be sorted by Driver::TextureFormat.
  */
@@ -104,7 +104,6 @@ const DriverBase::Entry DriverBase::mTextureInfo[] = {
         { TF::RGBA8,             SF::FLOAT,  SP::LOW    },
         { TF::SRGB8_A8,          SF::FLOAT,  SP::LOW    },
         { TF::RGBA8_SNORM,       SF::FLOAT,  SP::LOW    },
-        { TF::RGBM,              SF::FLOAT,  SP::LOW    },
         { TF::RGB10_A2,          SF::FLOAT,  SP::MEDIUM },
         { TF::RGBA8UI,           SF::UINT,   SP::LOW    },
         { TF::RGBA8I,            SF::INT,    SP::LOW    },

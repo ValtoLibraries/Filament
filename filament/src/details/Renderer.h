@@ -34,6 +34,7 @@
 
 #include <utils/compiler.h>
 #include <utils/Allocator.h>
+#include <utils/JobSystem.h>
 #include <utils/Slice.h>
 
 namespace filament {
@@ -59,12 +60,19 @@ public:
 
     FEngine& getEngine() const noexcept { return mEngine; }
 
+    math::float4 getShaderUserTime() const { return mShaderUserTime; }
+
     // do all the work here!
     void render(FView const* view);
-    void renderJob(ArenaScope& arena, FView* view);
+    void renderJob(ArenaScope& arena, FView& view);
+
+    void mirrorFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport, Viewport const& srcViewport,
+                     MirrorFrameFlag flags);
 
     bool beginFrame(FSwapChain* swapChain);
     void endFrame();
+
+    void resetUserTime();
 
     void readPixels(uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
             driver::PixelBufferDescriptor&& buffer);
@@ -73,6 +81,7 @@ public:
     void terminate(FEngine& engine);
 
 private:
+    friend class Renderer;
     using Command = RenderPass::Command;
 
     // this class is defined in RenderPass.cpp
@@ -80,16 +89,17 @@ private:
         using DriverApi = driver::DriverApi;
         utils::JobSystem& js;
         utils::JobSystem::Job* jobFroxelize = nullptr;
-        FView* const view;
+        FView const& view;
         Handle<HwRenderTarget> const rth;
         void beginRenderPass(driver::DriverApi& driver, Viewport const& viewport, const CameraInfo& camera) noexcept override;
         void endRenderPass(DriverApi& driver, Viewport const& viewport) noexcept override;
     public:
         ColorPass(const char* name, utils::JobSystem& js, utils::JobSystem::Job* jobFroxelize,
-                FView* view, Handle<HwRenderTarget> rth);
-        static void renderColorPass(FEngine& engine, utils::JobSystem& js,
+                FView& view, Handle<HwRenderTarget> rth);
+        static void renderColorPass(FEngine& engine,
+                utils::JobSystem& js, utils::JobSystem::Job* sync,
                 Handle<HwRenderTarget> rth,
-                FView* view, Viewport const& scaledViewport,
+                FView& view, Viewport const& scaledViewport,
                 utils::GrowingSlice<Command>& commands) noexcept;
     };
 
@@ -102,7 +112,7 @@ private:
     public:
         ShadowPass(const char* name, ShadowMap const& shadowMap) noexcept;
         static void renderShadowMap(FEngine& engine, utils::JobSystem& js,
-                FView* view, utils::GrowingSlice<Command>& commands) noexcept;
+                FView& view, utils::GrowingSlice<Command>& commands) noexcept;
     };
 
     Handle<HwRenderTarget> getRenderTarget() const noexcept { return mRenderTarget; }
@@ -117,16 +127,16 @@ private:
         return mCommandsHighWatermark * sizeof(RenderPass::Command);
     }
 
-    driver::TextureFormat getHdrFormat() const noexcept {
-        const bool translucent = mSwapChain->isTransparent();
-        return (translucent || !mIsRGB16FSupported) ? driver::TextureFormat::RGBA16F
-                                                    : driver::TextureFormat::RGB16F;
-    }
+    driver::TextureFormat getHdrFormat(const View& view) const noexcept;
+    driver::TextureFormat getLdrFormat() const noexcept;
 
-    driver::TextureFormat getLdrFormat() const noexcept {
-        const bool translucent = mSwapChain->isTransparent();
-        return (translucent || !mIsRGB8Supported) ? driver::TextureFormat::RGBA8
-                                                  : driver::TextureFormat::RGB8;
+    using clock = std::chrono::steady_clock;
+    using Epoch = clock::time_point;
+    using duration = clock::duration;
+
+    Epoch getUserEpoch() const { return mUserEpoch; }
+    duration getUserTime() const noexcept {
+        return clock::now() - getUserEpoch();
     }
 
     // keep a reference to our engine
@@ -139,6 +149,8 @@ private:
     FrameInfoManager mFrameInfoManager;
     bool mIsRGB16FSupported : 1;
     bool mIsRGB8Supported : 1;
+    Epoch mUserEpoch;
+    math::float4 mShaderUserTime;
 
     // per-frame arena for this Renderer
     LinearAllocatorArena& mPerRenderPassArena;

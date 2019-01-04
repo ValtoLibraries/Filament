@@ -24,6 +24,8 @@
 #include "details/Material.h"
 #include "details/RenderPrimitive.h"
 
+#include <filament/driver/DriverEnums.h>
+
 #include <utils/Log.h>
 #include <utils/Panic.h>
 
@@ -44,9 +46,9 @@ struct RenderableManager::BuilderDetails {
     bool mCulling : 1;
     bool mCastShadows : 1;
     bool mReceiveShadows : 1;
-    uint8_t mSkinningBoneCount = 0;
-    Bone const* mBones = nullptr;
-    math::mat4f const* mBoneMatrices = nullptr;
+    size_t mSkinningBoneCount = 0;
+    Bone const* mUserBones = nullptr;
+    math::mat4f const* mUserBoneMatrices = nullptr;
 
     explicit BuilderDetails(size_t count)
             : mEntriesCount(count), mCulling(true), mCastShadows(false), mReceiveShadows(true) {
@@ -134,21 +136,21 @@ RenderableManager::Builder& RenderableManager::Builder::receiveShadows(bool enab
 }
 
 RenderableManager::Builder& RenderableManager::Builder::skinning(size_t boneCount) noexcept {
-    mImpl->mSkinningBoneCount = (uint8_t)std::min(size_t(255), boneCount);
+    mImpl->mSkinningBoneCount = boneCount;
     return *this;
 }
 
 RenderableManager::Builder& RenderableManager::Builder::skinning(
-        size_t boneCount, Bone const* transforms) noexcept {
-    mImpl->mSkinningBoneCount = (uint8_t)std::min(size_t(255), boneCount);
-    mImpl->mBones = transforms;
+        size_t boneCount, Bone const* bones) noexcept {
+    mImpl->mSkinningBoneCount = boneCount;
+    mImpl->mUserBones = bones;
     return *this;
 }
 
 RenderableManager::Builder& RenderableManager::Builder::skinning(
         size_t boneCount, math::mat4f const* transforms) noexcept {
-    mImpl->mSkinningBoneCount = (uint8_t)std::min(size_t(255), boneCount);
-    mImpl->mBoneMatrices = transforms;
+    mImpl->mSkinningBoneCount = boneCount;
+    mImpl->mUserBoneMatrices = transforms;
     return *this;
 }
 
@@ -161,6 +163,12 @@ RenderableManager::Builder& RenderableManager::Builder::blendOrder(size_t index,
 
 RenderableManager::Builder::Result RenderableManager::Builder::build(Engine& engine, Entity entity) {
     bool isEmpty = true;
+
+    if (!ASSERT_PRECONDITION_NON_FATAL(mImpl->mSkinningBoneCount <= CONFIG_MAX_BONE_COUNT,
+            "bone count > %u", CONFIG_MAX_BONE_COUNT)) {
+        return Error;
+    }
+
     for (size_t i = 0, c = mImpl->mEntriesCount; i < c; i++) {
         auto& entry = mImpl->mEntries[i];
 
@@ -173,7 +181,7 @@ RenderableManager::Builder::Result RenderableManager::Builder::build(Engine& eng
             material = upcast(entry.materialInstance->getMaterial());
         }
 
-        // primitves without indices or vertices will be ignored
+        // primitives without indices or vertices will be ignored
         if (!entry.indices || !entry.vertices) {
             continue;
         }
@@ -247,21 +255,10 @@ void FRenderableManager::create(
     auto& manager = mManager;
     FEngine::DriverApi& driver = engine.getDriverApi();
 
-    // If we already have an instance we can reuse parts of it without completely
-    // destroying it. In particular we can reuse the UBO since it's the same for
-    // all renderables
-    bool canReuse = false;
-    Instance ci = getInstance(entity);
-    if (UTILS_UNLIKELY(ci)) {
-        canReuse = true;
-        destroyComponentPrimitives(engine, manager[ci].primitives);
-        std::unique_ptr<Bones> const& bones = manager[ci].bones;
-        if (bones && !builder->mSkinningBoneCount) {
-            driver.destroyUniformBuffer(bones->handle);
-        }
+    if (UTILS_UNLIKELY(manager.hasComponent(entity))) {
+        destroy(entity);
     }
-
-    ci = manager.addComponent(entity);
+    Instance ci = manager.addComponent(entity);
     assert(ci);
 
     if (ci) {
@@ -280,32 +277,29 @@ void FRenderableManager::create(
         setCastShadows(ci, builder->mCastShadows);
         setReceiveShadows(ci, builder->mReceiveShadows);
         setCulling(ci, builder->mCulling);
-        static_cast<Visibility&>(manager[ci].visibility).skinning = builder->mSkinningBoneCount > 0;
+        setSkinning(ci, false);
 
-        if (!canReuse) {
-            getUniformBuffer(ci) = UniformBuffer(engine.getPerRenderableUib());
-            setUniformHandle(ci, driver.createUniformBuffer(getUniformBuffer(ci).getSize()));
-            if (builder->mSkinningBoneCount) {
-                std::unique_ptr<Bones>& bones = manager[ci].bones;
-
-                bones.reset(new Bones); // FIXME: maybe use a pool allocator
-                bones->bones = UniformBuffer(CONFIG_MAX_BONE_COUNT * sizeof(Bone));
-                bones->handle = driver.createUniformBuffer(CONFIG_MAX_BONE_COUNT * sizeof(Bone));
-            }
-        }
-        if (builder->mSkinningBoneCount) {
-            std::unique_ptr<Bones> const& bones = manager[ci].bones;
+        const size_t count = builder->mSkinningBoneCount;
+        if (UTILS_UNLIKELY(count)) {
+            std::unique_ptr<Bones>& bones = manager[ci].bones;
+            bones = std::unique_ptr<Bones>(new Bones{
+                    driver.createUniformBuffer(count * sizeof(PerRenderableUibBone),
+                            driver::BufferUsage::DYNAMIC),
+                    UniformBuffer{ count * sizeof(PerRenderableUibBone) },
+                    count
+            });
             assert(bones);
-            bones->count = builder->mSkinningBoneCount;
-            if (builder->mBones) {
-                setBones(ci, builder->mBones, builder->mSkinningBoneCount);
-            } else if (builder->mBoneMatrices) {
-                setBones(ci, builder->mBoneMatrices, builder->mSkinningBoneCount);
-            } else {
-                // initialize the bones to identity
-                Bone* UTILS_RESTRICT out =
-                        (Bone*)bones->bones.invalidateUniforms(0, bones->count * sizeof(Bone));
-                std::fill_n(out, bones->count, Bone{});
+            if (bones) {
+                setSkinning(ci, true);
+                if (builder->mUserBones) {
+                    setBones(ci, builder->mUserBones, count);
+                } else if (builder->mUserBoneMatrices) {
+                    setBones(ci, builder->mUserBoneMatrices, count);
+                } else {
+                    // initialize the bones to identity
+                    PerRenderableUibBone* out = (PerRenderableUibBone*)bones->bones.invalidate();
+                    std::uninitialized_fill_n(out, count, PerRenderableUibBone{});
+                }
             }
         }
     }
@@ -342,7 +336,6 @@ void FRenderableManager::destroyComponent(Instance ci) noexcept {
     FEngine& engine = mEngine;
 
     FEngine::DriverApi& driver = engine.getDriverApi();
-    driver.destroyUniformBuffer(manager[ci].uniformsHandle);
 
     // See create(RenderableManager::Builder&, Entity)
     destroyComponentPrimitives(engine, manager[ci].primitives);
@@ -368,40 +361,17 @@ void FRenderableManager::prepare(
         Instance const* UTILS_RESTRICT instances,
         utils::Range<uint32_t> list) const noexcept {
     auto& manager = mManager;
-    UniformBuffer           const * const UTILS_RESTRICT uniforms = manager.raw_array<UNIFORMS>();
-    Handle<HwUniformBuffer> const * const UTILS_RESTRICT ubhs     = manager.raw_array<UNIFORMS_HANDLE>();
-    std::unique_ptr<Bones>  const * const UTILS_RESTRICT bones    = manager.raw_array<BONES>();
+
+    std::unique_ptr<Bones>  const * const UTILS_RESTRICT bones = manager.raw_array<BONES>();
     for (uint32_t index : list) {
         size_t i = instances[index].asValue();
         assert(i);  // we should never get the null instance here
-        if (uniforms[i].isDirty()) {
-            // update per-renderable uniform buffer
-            driver.updateUniformBuffer(ubhs[i], UniformBuffer(uniforms[i]));
-            uniforms[i].clean(); // clean AFTER we send to the driver
-        }
         if (UTILS_UNLIKELY(bones[i])) {
             if (bones[i]->bones.isDirty()) {
-                driver.updateUniformBuffer(bones[i]->handle, UniformBuffer(bones[i]->bones));
+                driver.updateUniformBuffer(bones[i]->handle, bones[i]->bones.toBufferDescriptor(driver));
                 bones[i]->bones.clean();
             }
         }
-    }
-}
-
-void FRenderableManager::updateLocalUBO(Instance instance, const math::mat4f& model) noexcept {
-    if (instance) {
-        auto& uniforms = getUniformBuffer(instance);
-
-        // update our uniform buffer
-        uniforms.setUniform(offsetof(FEngine::PerRenderableUib, worldFromModelMatrix), model);
-
-        // Using the inverse-transpose handles non-uniform scaling, but DOESN'T guarantee that
-        // the transformed normals will have unit-length, therefore they need to be normalized
-        // in the shader (that's already the case anyways, since normalization is needed after
-        // interpolation).
-        // Note: if the model matrix is known to be a rigid-transform, we could just use it directly.
-        mat3f nm = transpose(inverse(model.upperLeft()));
-        uniforms.setUniform(offsetof(FEngine::PerRenderableUib, worldFromModelNormalMatrix), nm);
     }
 }
 
@@ -484,13 +454,17 @@ void FRenderableManager::setBones(Instance ci,
         Bone const* UTILS_RESTRICT transforms, size_t boneCount, size_t offset) noexcept {
     if (ci) {
         std::unique_ptr<Bones> const& bones = mManager[ci].bones;
+        assert(bones && offset + boneCount <= bones->count);
         if (bones) {
-            assert(offset + boneCount <= bones->count);
             boneCount = std::min(boneCount, bones->count - offset);
-            Bone* UTILS_RESTRICT out = (Bone*)bones->bones.invalidateUniforms(
-                    offset * sizeof(Bone),
-                    boneCount * sizeof(Bone));
-            std::copy_n(transforms, boneCount, out);
+            PerRenderableUibBone* UTILS_RESTRICT out = (PerRenderableUibBone*)bones->bones.invalidateUniforms(
+                    offset * sizeof(PerRenderableUibBone),
+                    boneCount * sizeof(PerRenderableUibBone));
+            for (size_t i = 0, c = bones->count; i < c; ++i) {
+                out[i].q = transforms[i].unitQuaternion;
+                out[i].t.xyz = transforms[i].translation;
+                out[i].s = out[i].ns = { 1, 1, 1, 0 };
+            }
         }
     }
 }
@@ -499,19 +473,40 @@ void FRenderableManager::setBones(Instance ci,
         math::mat4f const* UTILS_RESTRICT transforms, size_t boneCount, size_t offset) noexcept {
     if (ci) {
         std::unique_ptr<Bones> const& bones = mManager[ci].bones;
+        assert(bones && offset + boneCount <= bones->count);
         if (bones) {
-            assert(offset + boneCount <= bones->count);
             boneCount = std::min(boneCount, bones->count - offset);
-            Bone* UTILS_RESTRICT out = (Bone*)bones->bones.invalidateUniforms(
-                    offset * sizeof(Bone),
-                    boneCount * sizeof(Bone));
+            PerRenderableUibBone* UTILS_RESTRICT out = (PerRenderableUibBone*)bones->bones.invalidateUniforms(
+                    offset * sizeof(PerRenderableUibBone),
+                    boneCount * sizeof(PerRenderableUibBone));
             for (size_t i = 0, c = bones->count; i < c; ++i) {
-                mat4f const& m = transforms[i];
-                out[i].unitQuaternion = m.toQuaternion();
-                out[i].translation = m[3].xyz;
+                makeBone(&out[i], transforms[i]);
             }
         }
     }
+}
+
+void FRenderableManager::makeBone(PerRenderableUibBone* UTILS_RESTRICT out, math::mat4f const& t) noexcept {
+    mat4f m(t);
+
+    // figure out the scales
+    float4 s = { length(m[0]), length(m[1]), length(m[2]), 0.0f };
+    if (dot(cross(m[0].xyz, m[1].xyz), m[2].xyz) < 0) {
+        s[2] = -s[2];
+    }
+
+    // compute the inverse scales
+    float4 is = { 1.0f/s.x, 1.0f/s.y, 1.0f/s.z, 0.0f };
+
+    // normalize the matrix
+    m[0] *= is[0];
+    m[1] *= is[1];
+    m[2] *= is[2];
+
+    out->s = s;
+    out->q = m.toQuaternion();
+    out->t = m[3];
+    out->ns = is / max(abs(is));
 }
 
 } // namespace details

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <filament/MaterialInstance.h>
+
 #include "details/MaterialInstance.h"
 
 #include "RenderPass.h"
@@ -21,6 +23,8 @@
 #include "details/Engine.h"
 #include "details/Material.h"
 #include "details/Texture.h"
+
+#include <string.h>
 
 using namespace math;
 
@@ -39,8 +43,10 @@ FMaterialInstance::FMaterialInstance(FEngine& engine, FMaterial const* material)
             material->getId(), material->generateMaterialInstanceId());
 
     if (!material->getUniformInterfaceBlock().isEmpty()) {
-        mUniforms = UniformBuffer(upcast(material)->getDefaultInstance()->mUniforms);
-        mUbHandle = driver.createUniformBuffer(mUniforms.getSize());
+        const UniformBuffer& defaultUniforms = upcast(material)->getDefaultInstance()->mUniforms;
+        mUniforms = UniformBuffer(upcast(material)->getUniformInterfaceBlock());
+        ::memcpy(const_cast<void*>(mUniforms.getBuffer()), defaultUniforms.getBuffer(), mUniforms.getSize());
+        mUbHandle = driver.createUniformBuffer(mUniforms.getSize(), driver::BufferUsage::DYNAMIC);
     }
 
     if (!material->getSamplerInterfaceBlock().isEmpty()) {
@@ -63,7 +69,7 @@ void FMaterialInstance::initDefaultInstance(FEngine& engine, FMaterial const* ma
 
     if (!material->getUniformInterfaceBlock().isEmpty()) {
         mUniforms = UniformBuffer(material->getUniformInterfaceBlock());
-        mUbHandle = driver.createUniformBuffer(mUniforms.getSize());
+        mUbHandle = driver.createUniformBuffer(mUniforms.getSize(), driver::BufferUsage::STATIC);
     }
 
     if (!material->getSamplerInterfaceBlock().isEmpty()) {
@@ -89,7 +95,7 @@ void FMaterialInstance::commitSlow(FEngine& engine) const {
     // update uniforms if needed
     FEngine::DriverApi& driver = engine.getDriverApi();
     if (mUniforms.isDirty()) {
-        driver.updateUniformBuffer(mUbHandle, UniformBuffer(mUniforms));
+        driver.updateUniformBuffer(mUbHandle, mUniforms.toBufferDescriptor(driver));
         mUniforms.clean();
     }
     if (mSamplers.isDirty()) {
@@ -195,6 +201,10 @@ void MaterialInstance::setScissor(uint32_t left, uint32_t bottom, uint32_t width
 
 void MaterialInstance::unsetScissor() noexcept {
     upcast(this)->unsetScissor();
+}
+
+void MaterialInstance::setPolygonOffset(float scale, float constant) noexcept {
+    upcast(this)->setPolygonOffset(scale, constant);
 }
 
 } // namespace filament

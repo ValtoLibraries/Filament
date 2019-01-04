@@ -28,7 +28,7 @@
 namespace filament {
 
 /*
- * A produdcer-consumer command queue that uses a CircularBuffer as main storage
+ * A producer-consumer command queue that uses a CircularBuffer as main storage
  */
 class CommandBufferQueue {
     struct Slice {
@@ -70,7 +70,7 @@ public:
     // call blocks until the CircularBuffer has at least mRequiredSize bytes available.
     void flush() noexcept;
 
-    // returns from waitForcommands() immediately.
+    // returns from waitForCommands() immediately.
     void requestExit();
 };
 

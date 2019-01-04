@@ -75,7 +75,6 @@ class FSwapChain;
 class FView;
 
 class DFG;
-class ProgramCache;
 
 /*
  * Concrete implementation of the Engine interface. This keeps track of all hardware resources
@@ -108,79 +107,9 @@ public:
     static constexpr size_t CONFIG_MIN_COMMAND_BUFFERS_SIZE     = details::CONFIG_MIN_COMMAND_BUFFERS_SIZE;
     static constexpr size_t CONFIG_COMMAND_BUFFERS_SIZE         = details::CONFIG_COMMAND_BUFFERS_SIZE;
 
-    struct PerViewUib {
-        static UniformInterfaceBlock getUib() noexcept;
-        // these fields are only used to call offsetof() and make it easy to visualize the UBO
-        // IMPORTANT NOTE: Respect std140 layout, don't update without updating getUib()
-        math::mat4f viewFromWorldMatrix;
-        math::mat4f worldFromViewMatrix;
-        math::mat4f clipFromViewMatrix;
-        math::mat4f viewFromClipMatrix;
-        math::mat4f clipFromWorldMatrix;
-        math::mat4f lightFromWorldMatrix;
-
-        math::float4 resolution; // width, height, 1/width, 1/height
-
-        math::float3 cameraPosition;
-        float time; // time in seconds, with a 1 second period
-
-        math::float4 lightColorIntensity; // directional light
-
-        math::float4 sun; // cos(sunAngle), sin(sunAngle), 1/(sunAngle*HALO_SIZE-sunAngle), HALO_EXP
-
-        math::float3 lightDirection;
-        uint32_t fParamsX; // stride-x
-
-        math::float3 shadowBias; // constant bias, normal bias, unused
-        float oneOverFroxelDimensionY;
-
-        math::float4 zParams; // froxel Z parameters
-
-        math::uint2 fParams; // stride-y, stride-z
-        math::float2 origin; // viewport left, viewport bottom
-
-        float oneOverFroxelDimensionX;
-        float iblLuminance;
-        float exposure;
-        float ev100;
-
-        alignas(16) math::float4 iblSH[9]; // actually float3 entries (std140 requires float4 alignment)
-    };
-
-    struct PerRenderableUib {
-        static UniformInterfaceBlock getUib() noexcept;
-        // these fields are only used to call offsetof() and make it easy to visualize the UBO
-        math::mat4f worldFromModelMatrix;
-        math::mat3f worldFromModelNormalMatrix;
-    };
-
-    struct PostProcessingUib {
-        static UniformInterfaceBlock getUib() noexcept;
-        math::float2 uvScale;
-        float time;             // time in seconds, with a 1 second period, used for dithering
-        float yOffset;
-    };
-
-    struct PerViewSib {
-        static SamplerInterfaceBlock getSib() noexcept;
-        // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
-        static constexpr size_t SHADOW_MAP     = 0;
-        static constexpr size_t RECORDS        = 1;
-        static constexpr size_t FROXELS        = 2;
-        static constexpr size_t IBL_DFG_LUT    = 3;
-        static constexpr size_t IBL_SPECULAR   = 4;
-        static constexpr size_t IBL_IRRADIANCE = 5;
-    };
-
-    struct PostProcessSib {
-        static SamplerInterfaceBlock getSib() noexcept;
-        // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
-        static constexpr size_t COLOR_BUFFER   = 0;
-    };
-
 public:
     static FEngine* create(Backend backend = Backend::DEFAULT,
-            ExternalContext* externalContext = nullptr, void* sharedGLContext = nullptr);
+            Platform* platform = nullptr, void* sharedGLContext = nullptr);
 
     ~FEngine() noexcept;
 
@@ -191,7 +120,6 @@ public:
 
     // Uniforms...
     const UniformInterfaceBlock& getPerViewUib() const noexcept { return mPerViewUib; }
-    const UniformInterfaceBlock& getPerRenderableUib() const noexcept { return mPerRenderableUib; }
     const UniformInterfaceBlock& getPerPostProcessUib() const noexcept { return mPostProcessUib; }
 
     // Samplers...
@@ -207,7 +135,7 @@ public:
     uint32_t getMaterialId() const noexcept { return mMaterialId++; }
 
     const FMaterial* getDefaultMaterial() const noexcept { return mDefaultMaterial; }
-    const FMaterial* getSkyboxMaterial(driver::TextureFormat format) const noexcept;
+    const FMaterial* getSkyboxMaterial(bool rgbm) const noexcept;
     const FIndirectLight* getDefaultIndirectLight() const noexcept { return mDefaultIbl; }
 
     Handle <HwProgram> getPostProcessProgramSlow(PostProcessStage stage) const noexcept;
@@ -275,15 +203,15 @@ public:
         return mBackend;
     }
 
-    duration getTime() const noexcept {
-        return clock::now() - getEpoch();
-    }
-
     void* streamAlloc(size_t size, size_t alignment) noexcept;
 
     utils::JobSystem& getJobSystem() noexcept { return mJobSystem; }
 
-    Epoch getEpoch() const { return mEpoch; }
+
+    Epoch getEngineEpoch() const { return mEngineEpoch; }
+    duration getEngineTime() const noexcept {
+        return clock::now() - getEngineEpoch();
+    }
 
     void shutdown();
 
@@ -331,11 +259,11 @@ public:
     void prepare();
     void gc();
 
-    filaflat::ShaderBuilder& getVertexShaderBuilder() noexcept {
+    filaflat::ShaderBuilder& getVertexShaderBuilder() const noexcept {
         return mVertexShaderBuilder;
     }
 
-    filaflat::ShaderBuilder& getFragmentShaderBuilder() noexcept {
+    filaflat::ShaderBuilder& getFragmentShaderBuilder() const noexcept {
         return mFragmentShaderBuilder;
     }
 
@@ -343,8 +271,10 @@ public:
         return mDebugRegistry;
     }
 
+    bool execute();
+
 private:
-    FEngine(Backend backend, ExternalContext* externalContext, void* sharedGLContext);
+    FEngine(Backend backend, Platform* platform, void* sharedGLContext);
     void init();
 
     int loop();
@@ -359,10 +289,10 @@ private:
     Handle<HwProgram> createPostProcessProgram(filaflat::MaterialParser& parser,
             driver::ShaderModel model, PostProcessStage stage) const noexcept;
 
-    std::unique_ptr<Driver> mDriver;
+    Driver* mDriver = nullptr;
 
     Backend mBackend;
-    ExternalContext* mExternalContext = nullptr;
+    Platform* mPlatform = nullptr;
     void* mSharedGLContext = nullptr;
     bool mTerminated = false;
     Handle<HwRenderPrimitive> mFullScreenTriangleRph;
@@ -401,9 +331,6 @@ private:
     // Per-view Uniform interface block
     UniformInterfaceBlock mPerViewUib;
 
-    // Per-Renderable Uniform interface block
-    UniformInterfaceBlock mPerRenderableUib;
-
     // Per-view Sampler interface block
     SamplerInterfaceBlock mPerViewSib;
 
@@ -420,7 +347,7 @@ private:
 
     utils::JobSystem mJobSystem;
 
-    Epoch mEpoch;
+    Epoch mEngineEpoch;
 
     mutable FMaterial const* mDefaultMaterial = nullptr;
     mutable FMaterial const* mSkyboxMaterials[2] = { nullptr, nullptr };
@@ -433,8 +360,8 @@ private:
 
     mutable utils::CountDownLatch mDriverBarrier;
 
-    filaflat::ShaderBuilder mVertexShaderBuilder;
-    filaflat::ShaderBuilder mFragmentShaderBuilder;
+    mutable filaflat::ShaderBuilder mVertexShaderBuilder;
+    mutable filaflat::ShaderBuilder mFragmentShaderBuilder;
     FDebugRegistry mDebugRegistry;
 
 public:
@@ -451,16 +378,6 @@ public:
 };
 
 FILAMENT_UPCAST(Engine)
-
-class UTILS_PUBLIC EnginePerformanceTest {
-public:
-    //! \privatesection
-    using PFN = void(*)(void *);
-    virtual void activateBigBang() noexcept;
-    void activateOmegaThirteen() noexcept;
-    PFN getDestroyUniverseApi();
-    virtual ~EnginePerformanceTest() noexcept;
-};
 
 } // namespace details
 } // namespace filament

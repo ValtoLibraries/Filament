@@ -40,7 +40,7 @@ struct VulkanSamplerBuffer;
 
 class VulkanDriver final : public DriverBase {
 public:
-    static std::unique_ptr<Driver> create(driver::ContextManagerVk* externalContext,
+    static Driver* create(driver::VulkanPlatform* platform,
             const char* const* ppEnabledExtensions, uint32_t enabledExtensionCount) noexcept;
 
 private:
@@ -49,12 +49,12 @@ private:
     void debugCommand(const char* methodName) override;
 #endif
 
-    inline VulkanDriver(driver::ContextManagerVk* const externalContext,
+    inline VulkanDriver(driver::VulkanPlatform* platform,
             const char* const* ppEnabledExtensions, uint32_t enabledExtensionCount) noexcept;
 
-    virtual ~VulkanDriver() noexcept;
+    ~VulkanDriver() noexcept override;
 
-    virtual ShaderModel getShaderModel() const noexcept override final;
+    ShaderModel getShaderModel() const noexcept final;
 
     template<typename T>
     friend class ::filament::ConcreteDispatcher;
@@ -71,11 +71,11 @@ private:
 
 #include "driver/DriverAPI.inc"
 
-private:
     VulkanDriver(VulkanDriver const&) = delete;
     VulkanDriver& operator = (VulkanDriver const&) = delete;
 
-    driver::ContextManagerVk& mContextManager;
+private:
+    driver::VulkanPlatform& mContextManager;
 
     // For now we're not bothering to store handles in pools, just simple on-demand allocation.
     // We have a little map from integer handles to "blobs" which get replaced with the Hw objects.

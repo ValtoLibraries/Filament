@@ -29,6 +29,8 @@
 
 #include <cmath>
 
+#include "generated/resources/resources.h"
+
 using namespace filament;
 using utils::Entity;
 using utils::EntityManager;
@@ -54,11 +56,7 @@ static Vertex TRIANGLE_VERTICES[3] = {
 
 static constexpr uint16_t TRIANGLE_INDICES[3] = { 0, 1, 2 };
 
-static constexpr uint8_t BAKED_COLOR_PACKAGE[] = {
-    #include "generated/material/bakedColor.inc"
-};
-
-int main() {
+int main(int argc, char** argv) {
     Config config;
     config.title = "animation";
     config.backend = Engine::Backend::VULKAN;
@@ -79,7 +77,7 @@ int main() {
         app.ib->setBuffer(*engine,
                 IndexBuffer::BufferDescriptor(TRIANGLE_INDICES, 6, nullptr));
         app.mat = Material::Builder()
-                .package((void*) BAKED_COLOR_PACKAGE, sizeof(BAKED_COLOR_PACKAGE)).build(*engine);
+                .package(RESOURCES_BAKEDCOLOR_DATA, RESOURCES_BAKEDCOLOR_SIZE).build(*engine);
         app.renderable = EntityManager::get().create();
         scene->addEntity(app.renderable);
         app.cam = engine->createCamera();
@@ -140,4 +138,6 @@ int main() {
     });
 
     FilamentApp::get().run(config, setup, cleanup);
+
+    return 0;
 }

@@ -17,7 +17,7 @@
 #ifndef TNT_FILAMENT_DRIVER_GL_HEADERS_H
 #define TNT_FILAMENT_DRIVER_GL_HEADERS_H
 
-#if defined(ANDROID) || defined(USE_EXTERNAL_GLES3)
+#if defined(ANDROID) || defined(USE_EXTERNAL_GLES3) || defined(__EMSCRIPTEN__)
 
     #include <GLES3/gl31.h>
     #include <GLES2/gl2ext.h>
@@ -31,14 +31,37 @@
 #ifdef GL_OES_EGL_image
         extern PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES;
 #endif
-#if GL_EXT_debug_marker
+#ifdef GL_EXT_debug_marker
         extern PFNGLINSERTEVENTMARKEREXTPROC glInsertEventMarkerEXT;
         extern PFNGLPUSHGROUPMARKEREXTPROC glPushGroupMarkerEXT;
         extern PFNGLPOPGROUPMARKEREXTPROC glPopGroupMarkerEXT;
 #endif
-    };
+#if GL_EXT_multisampled_render_to_texture
+        extern PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC glFramebufferTexture2DMultisampleEXT;
+#endif
+    }
 
     using namespace glext;
+
+#elif defined(IOS)
+
+    #include <OpenGLES/ES3/gl.h>
+    #include <OpenGLES/ES3/glext.h>
+
+    /* The iOS SDK only provides OpenGL ES headers up to 3.0. Filament works with OpenGL 3.0, but
+     * requires 3.1 headers in order to compile. We fake it by adding the necessary 3.1 declarations
+     * below. */
+
+    #define GL_ES_VERSION_3_1 1
+    #define GL_TEXTURE_2D_MULTISAMPLE         0x9100
+
+    void glTexStorage2DMultisample (GLenum target, GLsizei samples, GLenum internalformat,
+            GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+
+    namespace glext {
+        void glFramebufferTexture2DMultisampleEXT (GLenum target, GLenum attachment,
+                GLenum textarget, GLuint texture, GLint level, GLsizei samples);
+    }
 
 #else
     #include <bluegl/BlueGL.h>
@@ -65,12 +88,6 @@
 #define GL41_HEADERS true
 #else
 #define GL41_HEADERS false
-#endif
-
-#if defined(GL_VERSION_4_5)
-#define GL45_HEADERS true
-#else
-#define GL45_HEADERS false
 #endif
 
 #endif // TNT_FILAMENT_DRIVER_GL_HEADERS_H

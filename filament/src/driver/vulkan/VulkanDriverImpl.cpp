@@ -21,7 +21,9 @@
 #pragma clang diagnostic ignored "-Wundef"
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#pragma clang diagnostic ignored "-Wtautological-compare"
 #define VMA_IMPLEMENTATION
+#include <cstdio>
 #include "vk_mem_alloc.h"
 #pragma clang diagnostic pop
 
@@ -152,8 +154,17 @@ void createVirtualDevice(VulkanContext& context) {
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceCreateInfo.queueCreateInfoCount = 1;
     deviceCreateInfo.pQueueCreateInfos = deviceQueueCreateInfo;
-    deviceCreateInfo.pEnabledFeatures = nullptr;
-    deviceCreateInfo.enabledExtensionCount = deviceExtensionNames.size();
+
+    // We could simply enable all supported features, but since that may have performance
+    // consequences let's just enable the features we need.
+    const auto& supportedFeatures = context.physicalDeviceFeatures;
+    VkPhysicalDeviceFeatures enabledFeatures {
+        .textureCompressionETC2 = supportedFeatures.textureCompressionETC2,
+        .textureCompressionBC = supportedFeatures.textureCompressionBC,
+    };
+
+    deviceCreateInfo.pEnabledFeatures = &enabledFeatures;
+    deviceCreateInfo.enabledExtensionCount = (uint32_t)deviceExtensionNames.size();
     deviceCreateInfo.ppEnabledExtensionNames = deviceExtensionNames.data();
     VkResult result = vkCreateDevice(context.physicalDevice, &deviceCreateInfo, VKALLOC,
             &context.device);
@@ -604,7 +615,6 @@ VkFormat getVkFormat(TextureFormat format) {
         case TextureFormat::RGBA8:             return VK_FORMAT_R8G8B8A8_UNORM;
         case TextureFormat::SRGB8_A8:          return VK_FORMAT_R8G8B8A8_SRGB;
         case TextureFormat::RGBA8_SNORM:       return VK_FORMAT_R8G8B8A8_SNORM;
-        case TextureFormat::RGBM:              return VK_FORMAT_R8G8B8A8_UNORM;
         case TextureFormat::RGB10_A2:          return VK_FORMAT_A2R10G10B10_UNORM_PACK32;
         case TextureFormat::RGBA8UI:           return VK_FORMAT_R8G8B8A8_UINT;
         case TextureFormat::RGBA8I:            return VK_FORMAT_R8G8B8A8_SINT;
@@ -630,25 +640,69 @@ VkFormat getVkFormat(TextureFormat format) {
         case TextureFormat::RGB32UI:           return VK_FORMAT_R32G32B32_UINT;
         case TextureFormat::RGB32I:            return VK_FORMAT_R32G32B32_SINT;
 
-        // 128-bits per element
+        // 128-bits per element.
         case TextureFormat::RGBA32F:           return VK_FORMAT_R32G32B32A32_SFLOAT;
         case TextureFormat::RGBA32UI:          return VK_FORMAT_R32G32B32A32_UINT;
         case TextureFormat::RGBA32I:           return VK_FORMAT_R32G32B32A32_SINT;
+
+        // Compressed textures.
+        case TextureFormat::DXT1_RGB:          return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+        case TextureFormat::DXT1_RGBA:         return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+        case TextureFormat::DXT3_RGBA:         return VK_FORMAT_BC2_UNORM_BLOCK;
+        case TextureFormat::DXT5_RGBA:         return VK_FORMAT_BC3_UNORM_BLOCK;
+
+        case TextureFormat::RGBA_ASTC_4x4:     return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_5x4:     return VK_FORMAT_ASTC_5x4_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_5x5:     return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_6x5:     return VK_FORMAT_ASTC_6x5_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_6x6:     return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_8x5:     return VK_FORMAT_ASTC_8x5_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_8x6:     return VK_FORMAT_ASTC_8x6_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_8x8:     return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_10x5:    return VK_FORMAT_ASTC_10x5_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_10x6:    return VK_FORMAT_ASTC_10x6_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_10x8:    return VK_FORMAT_ASTC_10x8_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_10x10:   return VK_FORMAT_ASTC_10x10_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_12x10:   return VK_FORMAT_ASTC_12x10_UNORM_BLOCK;
+        case TextureFormat::RGBA_ASTC_12x12:   return VK_FORMAT_ASTC_12x12_UNORM_BLOCK;
+
+        case TextureFormat::SRGB8_ALPHA8_ASTC_4x4:   return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_5x4:   return VK_FORMAT_ASTC_5x4_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_5x5:   return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_6x5:   return VK_FORMAT_ASTC_6x5_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_6x6:   return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_8x5:   return VK_FORMAT_ASTC_8x5_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_8x6:   return VK_FORMAT_ASTC_8x6_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_8x8:   return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_10x5:  return VK_FORMAT_ASTC_10x5_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_10x6:  return VK_FORMAT_ASTC_10x6_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_10x8:  return VK_FORMAT_ASTC_10x8_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_10x10: return VK_FORMAT_ASTC_10x10_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_12x10: return VK_FORMAT_ASTC_12x10_SRGB_BLOCK;
+        case TextureFormat::SRGB8_ALPHA8_ASTC_12x12: return VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
+
+        case TextureFormat::ETC2_RGB8:         return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+        case TextureFormat::ETC2_SRGB8:        return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+        case TextureFormat::ETC2_RGB8_A1:      return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
+        case TextureFormat::ETC2_SRGB8_A1:     return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;
+
+        case TextureFormat::ETC2_EAC_RGBA8:    return VK_FORMAT_UNDEFINED;
+        case TextureFormat::ETC2_EAC_SRGBA8:   return VK_FORMAT_UNDEFINED;
+
+        case TextureFormat::EAC_R11:           return VK_FORMAT_EAC_R11_UNORM_BLOCK;
+        case TextureFormat::EAC_R11_SIGNED:    return VK_FORMAT_EAC_R11_SNORM_BLOCK;
+        case TextureFormat::EAC_RG11:          return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;
+        case TextureFormat::EAC_RG11_SIGNED:   return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;
 
         default:
             return VK_FORMAT_UNDEFINED;
     }
 }
 
-uint32_t getBytesPerPixel(TextureFormat format) {
-    return details::FTexture::getFormatSize(format);
-}
-
 // See also FTexture::computeTextureDataSize, which takes a public-facing Texture format rather
 // than a driver-level Texture format, and can account for a specified byte alignment.
-uint32_t computeSize(TextureFormat format, uint32_t w, uint32_t h, uint32_t d) {
-    const size_t bytesPerTexel = details::FTexture::getFormatSize(format);
-    return bytesPerTexel * w * h * d;
+uint32_t getBytesPerPixel(TextureFormat format) {
+    return (uint32_t)details::FTexture::getFormatSize(format);
 }
 
 SwapContext& getSwapContext(VulkanContext& context) {
@@ -657,12 +711,12 @@ SwapContext& getSwapContext(VulkanContext& context) {
 }
 
 bool hasPendingWork(VulkanContext& context) {
-    if (context.pendingWork.size() > 0) {
+    if (!context.pendingWork.empty()) {
         return true;
     }
     if (context.currentSurface) {
         for (auto& swapContext : context.currentSurface->swapContexts) {
-            if (swapContext.pendingWork.size() > 0) {
+            if (!swapContext.pendingWork.empty()) {
                 return true;
             }
         }
@@ -699,6 +753,21 @@ VkBlendFactor getBlendFactor(BlendFunction mode) {
         case BlendFunction::ONE_MINUS_DST_ALPHA:   return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
         case BlendFunction::SRC_ALPHA_SATURATE:    return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
     }
+}
+
+VkCullModeFlags getCullMode(CullingMode mode) {
+    using CullingMode = filament::driver::CullingMode;
+    switch (mode) {
+        case CullingMode::NONE:           return VK_CULL_MODE_NONE;
+        case CullingMode::FRONT:          return VK_CULL_MODE_FRONT_BIT;
+        case CullingMode::BACK:           return VK_CULL_MODE_BACK_BIT;
+        case CullingMode::FRONT_AND_BACK: return VK_CULL_MODE_FRONT_AND_BACK;
+    }
+}
+
+VkFrontFace getFrontFace(bool inverseFrontFaces) {
+    return inverseFrontFaces ?
+            VkFrontFace::VK_FRONT_FACE_CLOCKWISE : VkFrontFace::VK_FRONT_FACE_COUNTER_CLOCKWISE;
 }
 
 void waitForIdle(VulkanContext& context) {

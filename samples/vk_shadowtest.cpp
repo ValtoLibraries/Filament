@@ -28,6 +28,8 @@
 #include "../samples/app/FilamentApp.h"
 #include "../samples/app/MeshAssimp.h"
 
+#include "generated/resources/resources.h"
+
 using namespace filament;
 using namespace math;
 using Backend = Engine::Backend;
@@ -47,19 +49,16 @@ struct App {
     GroundPlane plane;
 };
 
-static const char* MODEL_FILE = "samples/assets/models/monkey/monkey.obj";
-static const char* IBL_FOLDER = "../samples/envs/office";
+static const char* MODEL_FILE = "assets/models/monkey/monkey.obj";
+static const char* IBL_FOLDER = "envs/pillars";
 
 static constexpr bool ENABLE_SHADOWS = true;
-static constexpr uint8_t GROUND_SHADOW_PACKAGE[] = {
-    #include "generated/material/groundShadow.inc"
-};
 
 static GroundPlane createGroundPlane(Engine* engine);
 
 static const Config config {
     .title = "shadowtest",
-    .iblDirectory = IBL_FOLDER,
+    .iblDirectory = FilamentApp::getRootPath() + IBL_FOLDER,
     .scale = 1,
     .splitView = false,
     .backend = Backend::VULKAN,
@@ -75,7 +74,7 @@ int main(int argc, char** argv) {
 
         // Add geometry into the scene.
         app.meshes = new MeshAssimp(*engine);
-        app.meshes->addFromFile(MODEL_FILE, app.materials);
+        app.meshes->addFromFile(FilamentApp::getRootPath() + MODEL_FILE, app.materials);
         auto ti = tcm.getInstance(app.meshes->getRenderables()[0]);
         app.transform = mat4f{ mat3f(1), float3(0, 0, -4) } * tcm.getWorldTransform(ti);
         for (auto renderable : app.meshes->getRenderables()) {
@@ -125,11 +124,13 @@ int main(int argc, char** argv) {
     });
 
     FilamentApp::get().run(config, setup, cleanup);
+
+    return 0;
 }
 
 static GroundPlane createGroundPlane(Engine* engine) {
     Material* shadowMaterial = Material::Builder()
-        .package((void*) GROUND_SHADOW_PACKAGE, sizeof(GROUND_SHADOW_PACKAGE))
+        .package(RESOURCES_GROUNDSHADOW_DATA, RESOURCES_GROUNDSHADOW_SIZE)
         .build(*engine);
 
     const static uint32_t indices[] {
@@ -172,7 +173,7 @@ static GroundPlane createGroundPlane(Engine* engine) {
         .build(*engine, renderable);
 
     auto& tcm = engine->getTransformManager();
-    tcm.setTransform(tcm.getInstance(renderable), mat4f::translate(float4{0, -1, -4, 1}));
+    tcm.setTransform(tcm.getInstance(renderable), mat4f::translate(float3{0, -1, -4}));
     return {
         .vb = vertexBuffer,
         .ib = indexBuffer,

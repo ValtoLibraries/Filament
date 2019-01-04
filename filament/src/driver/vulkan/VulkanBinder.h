@@ -36,7 +36,7 @@ namespace driver {
 //
 // Abbreviated example usage:
 //
-//     void Driver::bindUniforms(uint32_t index, UniformBlock block) {
+//     void Driver::bindUniformBuffer(uint32_t index, UniformBlock block) {
 //         VkBuffer buffer = block->getGpuBuffer();
 //         mBinder.bindUniformBuffer(index, buffer);
 //     }
@@ -70,7 +70,7 @@ namespace driver {
 class VulkanBinder {
 public:
     static constexpr uint32_t NUM_UBUFFER_BINDINGS = filament::BindingPoints::COUNT;
-    static constexpr uint32_t NUM_SAMPLER_BINDINGS = 8;
+    static constexpr uint32_t NUM_SAMPLER_BINDINGS = filament::MAX_SAMPLER_COUNT;
     static constexpr uint32_t NUM_SHADER_MODULES = 2;
     static constexpr uint32_t MAX_VERTEX_ATTRIBUTES = filament::ATTRIBUTE_INDEX_COUNT;
 
@@ -131,7 +131,8 @@ public:
     void bindRasterState(const RasterState& rasterState) noexcept;
     void bindRenderPass(VkRenderPass renderPass) noexcept;
     void bindPrimitiveTopology(VkPrimitiveTopology topology) noexcept;
-    void bindUniformBuffer(uint32_t bindingIndex, VkBuffer uniformBuffer) noexcept;
+    void bindUniformBuffer(uint32_t bindingIndex, VkBuffer uniformBuffer,
+            VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) noexcept;
     void bindSampler(uint32_t bindingIndex, VkDescriptorImageInfo imageInfo) noexcept;
     void bindVertexArray(const VertexArray& varray) noexcept;
 
@@ -206,11 +207,15 @@ private:
     struct alignas(8) DescriptorKey {
         VkBuffer uniformBuffers[NUM_UBUFFER_BINDINGS];
         VkDescriptorImageInfo samplers[NUM_SAMPLER_BINDINGS];
+        VkDeviceSize uniformBufferOffsets[NUM_UBUFFER_BINDINGS];
+        VkDeviceSize uniformBufferSizes[NUM_UBUFFER_BINDINGS];
     };
 
     static_assert(sizeof(DescriptorKey) ==
         sizeof(DescriptorKey::uniformBuffers) +
-        sizeof(DescriptorKey::samplers),
+        sizeof(DescriptorKey::samplers) +
+        sizeof(DescriptorKey::uniformBufferOffsets) +
+        sizeof(DescriptorKey::uniformBufferSizes),
         "Implicit padding is not allowed for fast hashing");
 
     static_assert(std::is_pod<DescriptorKey>::value, "DescriptorKey must be a POD.");
@@ -256,7 +261,7 @@ private:
     PipelineVal* mCurrentPipeline = nullptr;
     DescriptorVal* mCurrentDescriptor = nullptr;
 
-    // If one of these dirty flags is set, then one or more its contituent bindings have changed, so
+    // If one of these dirty flags is set, then one or more its constituent bindings have changed, so
     // a new pipeline or descriptor set needs to be retrieved from the cache or created.
     bool mDirtyPipeline = true;
     bool mDirtyDescriptor = true;

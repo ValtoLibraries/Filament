@@ -128,7 +128,7 @@ TEST_F(CmgenTest, SphericalHarmonics) { // NOLINT
     string content = readFile(resultPath);
     string vec3(R"(\(\s+([-+0-9.]+),\s+([-+0-9.]+),\s+([-+0-9.]+)\); // )");
 
-    compareSh(content, vec3 + "L00",  float3{3.14159265f});
+    compareSh(content, vec3 + "L00",  float3{1.0f});
     compareSh(content, vec3 + "L1-1", float3{0.0f});
     compareSh(content, vec3 + "L10",  float3{0.0f});
     compareSh(content, vec3 + "L11",  float3{0.0f});
@@ -142,7 +142,7 @@ TEST_F(CmgenTest, SphericalHarmonics) { // NOLINT
 TEST_F(CmgenTest, HdrLatLong) { // NOLINT
     const string inputPath = "assets/environments/white_furnace/white_furnace.exr";
     const string resultPath = "white_furnace/nx.rgbm";
-    const string goldenPath = "samples/envs/white_furnace/nx.rgbm";
+    const string goldenPath = "tools/cmgen/tests/white_furnace_nx.rgbm";
     processEnvMap(inputPath, resultPath, goldenPath);
 }
 

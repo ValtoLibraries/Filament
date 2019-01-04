@@ -35,7 +35,7 @@ CommandBufferQueue::CommandBufferQueue(size_t requiredSize, size_t bufferSize)
 }
 
 CommandBufferQueue::~CommandBufferQueue() {
-    assert(!mCommandBuffersToExecute.size());
+    assert(mCommandBuffersToExecute.empty());
 }
 
 void CommandBufferQueue::requestExit() {
@@ -102,6 +102,9 @@ void CommandBufferQueue::flush() noexcept {
 }
 
 std::vector<CommandBufferQueue::Slice> CommandBufferQueue::waitForCommands() const {
+    if (!UTILS_HAS_THREADING) {
+        return std::move(mCommandBuffersToExecute);
+    }
     std::unique_lock<utils::Mutex> lock(mLock);
     while (mCommandBuffersToExecute.empty() && !mExitRequested) {
         mCondition.wait(lock);

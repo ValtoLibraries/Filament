@@ -32,7 +32,7 @@
 #include <math/mat4.h>
 #include <math/vec3.h>
 
-#include <utils/compiler.h>
+#include <type_traits>
 
 namespace filament {
 
@@ -83,7 +83,7 @@ public:
         Builder& castShadows(bool enable) noexcept; // false by default
         Builder& receiveShadows(bool enable) noexcept; // true by default
         Builder& skinning(size_t boneCount) noexcept; // 0 by default, 255 max
-        Builder& skinning(size_t boneCount, Bone const* transforms) noexcept;
+        Builder& skinning(size_t boneCount, Bone const* bones) noexcept;
         Builder& skinning(size_t boneCount, math::mat4f const* transforms) noexcept;
 
         // Sets an ordering index for blended primitives that all live at the same Z value.

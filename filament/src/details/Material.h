@@ -38,7 +38,6 @@ namespace filament {
 namespace details {
 
 class  FEngine;
-struct ShaderGenerator;
 
 class FMaterial : public Material {
 public:
@@ -92,6 +91,7 @@ public:
     Shading getShading() const noexcept { return mShading; }
     Interpolation getInterpolation() const noexcept { return mInterpolation; }
     BlendingMode getBlendingMode() const noexcept { return mBlendingMode; }
+    BlendingMode getRenderBlendingMode() const noexcept { return mRenderBlendingMode; }
     VertexDomain getVertexDomain() const noexcept { return mVertexDomain; }
     CullingMode getCullingMode() const noexcept { return mCullingMode; }
     TransparencyMode getTransparencyMode() const noexcept { return mTransparencyMode; }
@@ -101,7 +101,7 @@ public:
         return mRasterState.depthFunc != Driver::RasterState::DepthFunc::A;
     }
     bool isDoubleSided() const noexcept { return mDoubleSided; }
-    float getMaskThreshold() const noexcept { return mMaskTreshold; }
+    float getMaskThreshold() const noexcept { return mMaskThreshold; }
     bool hasShadowMultiplier() const noexcept { return mHasShadowMultiplier; }
     AttributeBitset getRequiredAttributes() const noexcept { return mRequiredAttributes; }
 
@@ -116,17 +116,20 @@ public:
 private:
     // try to order by frequency of use
     mutable std::array<Handle<HwProgram>, VARIANT_COUNT> mCachedPrograms;
+
     Driver::RasterState mRasterState;
-    Shading mShading;
+    BlendingMode mRenderBlendingMode;
+    TransparencyMode mTransparencyMode;
     bool mIsVariantLit;
+    Shading mShading;
+
     BlendingMode mBlendingMode;
     Interpolation mInterpolation;
     VertexDomain mVertexDomain;
-    TransparencyMode mTransparencyMode;
-    AttributeBitset mRequiredAttributes;
-    bool mDoubleSided;
     CullingMode mCullingMode;
-    float mMaskTreshold;
+    AttributeBitset mRequiredAttributes;
+    float mMaskThreshold;
+    bool mDoubleSided;
     bool mHasShadowMultiplier = false;
     bool mHasCustomDepthShader = false;
     bool mIsDefaultMaterial = false;

@@ -20,11 +20,18 @@
 
 #include "FilamentAPI-impl.h"
 
+#include <math/mat3.h>
+#include <math/norm.h>
+#include <math/quat.h>
+#include <math/vec3.h>
+#include <math/vec4.h>
+
 #include <utils/Panic.h>
 
 namespace filament {
 
 using namespace details;
+using namespace math;
 
 struct VertexBuffer::BuilderDetails {
     VertexBuffer::Builder::AttributeData mAttributes[MAX_ATTRIBUTE_BUFFERS_COUNT];
@@ -32,6 +39,10 @@ struct VertexBuffer::BuilderDetails {
     uint32_t mVertexCount = 0;
     uint8_t mBufferCount = 0;
 };
+
+static bool hasIntegerTarget(VertexAttribute attribute) {
+    return attribute == BONE_INDICES;
+}
 
 using BuilderType = VertexBuffer;
 BuilderType::Builder::Builder() noexcept = default;
@@ -67,11 +78,11 @@ VertexBuffer::Builder& VertexBuffer::Builder::attribute(VertexAttribute attribut
 
 #ifndef NDEBUG
         if (byteOffset & 0x3) {
-            utils::slog.d << "[performace] VertexBuffer::Builder::attribute() "
+            utils::slog.d << "[performance] VertexBuffer::Builder::attribute() "
                              "byteOffset not multiple of 4" << utils::io::endl;
         }
         if (byteStride & 0x3) {
-            utils::slog.d << "[performace] VertexBuffer::Builder::attribute() "
+            utils::slog.d << "[performance] VertexBuffer::Builder::attribute() "
                              "byteStride not multiple of 4" << utils::io::endl;
         }
 #endif
@@ -81,6 +92,9 @@ VertexBuffer::Builder& VertexBuffer::Builder::attribute(VertexAttribute attribut
         entry.offset = byteOffset;
         entry.stride = byteStride;
         entry.type = attributeType;
+        if (hasIntegerTarget(attribute)) {
+            entry.flags |= Driver::Attribute::FLAG_INTEGER_TARGET;
+        }
         mImpl->mDeclaredAttributes.set(attribute);
     }
     return *this;
@@ -89,7 +103,7 @@ VertexBuffer::Builder& VertexBuffer::Builder::attribute(VertexAttribute attribut
 VertexBuffer::Builder& VertexBuffer::Builder::normalized(VertexAttribute attribute) noexcept {
     if (size_t(attribute) < MAX_ATTRIBUTE_BUFFERS_COUNT) {
         AttributeData& entry = mImpl->mAttributes[attribute];
-        entry.normalized = true;
+        entry.flags |= Driver::Attribute::FLAG_NORMALIZED;
     }
     return *this;
 }
@@ -127,19 +141,20 @@ FVertexBuffer::FVertexBuffer(FEngine& engine, const VertexBuffer::Builder& build
 
     auto const& declaredAttributes = mDeclaredAttributes;
     auto const& attributes = mAttributes;
+    #pragma nounroll
     for (size_t i = 0, n = attributeArray.size(); i < n; ++i) {
         if (declaredAttributes[i]) {
             attributeArray[i].offset = attributes[i].offset;
             attributeArray[i].stride = attributes[i].stride;
             attributeArray[i].buffer = attributes[i].buffer;
-            attributeArray[i].type = attributes[i].type;
-            attributeArray[i].normalized = attributes[i].normalized;
+            attributeArray[i].type   = attributes[i].type;
+            attributeArray[i].flags  = attributes[i].flags;
         }
     }
 
     FEngine::DriverApi& driver = engine.getDriverApi();
     mHandle = driver.createVertexBuffer(
-            mBufferCount, attributeCount, mVertexCount, attributeArray);
+            mBufferCount, attributeCount, mVertexCount, attributeArray, driver::BufferUsage::STATIC);
 }
 
 void FVertexBuffer::terminate(FEngine& engine) {
@@ -159,7 +174,7 @@ void FVertexBuffer::setBufferAt(FEngine& engine, uint8_t bufferIndex,
     }
 
     if (bufferIndex < mBufferCount) {
-        engine.getDriverApi().loadVertexBuffer(mHandle, bufferIndex,
+        engine.getDriverApi().updateVertexBuffer(mHandle, bufferIndex,
                 std::move(buffer), byteOffset, byteSize);
     } else {
         ASSERT_PRECONDITION_NON_FATAL(bufferIndex < mBufferCount,
@@ -183,6 +198,64 @@ void VertexBuffer::setBufferAt(Engine& engine, uint8_t bufferIndex,
         driver::BufferDescriptor&& buffer, uint32_t byteOffset, uint32_t byteSize) {
     upcast(this)->setBufferAt(upcast(engine), bufferIndex,
             std::move(buffer), byteOffset, byteSize);
+}
+
+void VertexBuffer::populateTangentQuaternions(const QuatTangentContext& ctx) {
+    if (!ASSERT_PRECONDITION_NON_FATAL(ctx.normals, "Normals must be provided")) {
+        return;
+    }
+
+    // Define a small lambda that converts fp32 into the desired output format.
+    void (*writeQuat)(math::quatf, uint8_t*);
+    switch (ctx.quatType) {
+        case HALF4:
+            writeQuat = [] (quatf inquat, uint8_t* outquat) {
+                *((quath*) outquat) = quath(inquat);
+            };
+            break;
+        case SHORT4:
+            writeQuat = [] (quatf inquat, uint8_t* outquat) {
+                *((short4*) outquat) = packSnorm16(inquat.xyzw);
+            };
+            break;
+        case FLOAT4:
+            writeQuat = [] (quatf inquat, uint8_t* outquat) {
+                *((quatf*) outquat) = inquat;
+            };
+            break;
+    }
+
+    const float3* normal = ctx.normals;
+    const size_t nstride = ctx.normalsStride ? ctx.normalsStride : sizeof(math::float3);
+    uint8_t* outquat = (uint8_t*) ctx.outBuffer;
+
+    // If tangents are not provided, simply cross N with arbitrary vector (1, 0, 0)
+    if (!ctx.tangents) {
+        for (size_t qindex = 0, qcount = ctx.quatCount; qindex < qcount; ++qindex) {
+            float3 n = *normal;
+            float3 b = normalize(cross(n, float3{1, 0, 0}));
+            float3 t = cross(n, b);
+            writeQuat(mat3f::packTangentFrame({t, b, n}), outquat);
+            normal = (const float3*) (((const uint8_t*) normal) + nstride);
+            outquat += ctx.outStride;
+        }
+        return;
+    }
+
+    const float3* tanvec = &ctx.tangents->xyz;
+    const float* tandir = &ctx.tangents->w;
+    const size_t tstride = ctx.tangentsStride ? ctx.tangentsStride : sizeof(math::float4);
+
+    for (size_t qindex = 0, qcount = ctx.quatCount; qindex < qcount; ++qindex) {
+        float3 n = *normal;
+        float3 t = *tanvec;
+        float3 b = *tandir > 0 ? cross(t, n) : cross(n, t);
+        writeQuat(mat3f::packTangentFrame({t, b, n}), outquat);
+        normal = (const float3*) (((const uint8_t*) normal) + nstride);
+        tanvec = (const float3*) (((const uint8_t*) tanvec) + tstride);
+        tandir = (const float*) (((const uint8_t*) tandir) + tstride);
+        outquat += ctx.outStride;
+    }
 }
 
 } // namespace filament

@@ -27,6 +27,7 @@
 
 #include <utils/compiler.h>
 #include <utils/memalign.h>
+#include <utils/Mutex.h>
 
 namespace utils {
 
@@ -170,16 +171,7 @@ public:
 
 // ------------------------------------------------------------------------------------------------
 
-class FreeListBase {
-public:
-    struct Node {
-        Node* next;
-    };
-    static Node* init(void* begin, void* end,
-            size_t elementSize, size_t alignment, size_t extra) noexcept;
-};
-
-class FreeList : private FreeListBase {
+class FreeList {
 public:
     FreeList() noexcept = default;
     FreeList(void* begin, void* end, size_t elementSize, size_t alignment, size_t extra) noexcept;
@@ -188,7 +180,7 @@ public:
     FreeList(FreeList&& rhs) noexcept = default;
     FreeList& operator=(FreeList&& rhs) noexcept = default;
 
-    void* get() noexcept {
+    void* pop() noexcept {
         Node* const head = mHead;
         mHead = head ? head->next : nullptr;
         // this could indicate a use after free
@@ -196,7 +188,7 @@ public:
         return head;
     }
 
-    void put(void* p) noexcept {
+    void push(void* p) noexcept {
         assert(p);
         assert(p >= mBegin && p < mEnd);
         // TODO: assert this is one of our pointer (i.e.: it's address match one of ours)
@@ -205,11 +197,18 @@ public:
         mHead = head;
     }
 
-    void *getCurrent() noexcept {
+    void *getFirst() noexcept {
         return mHead;
     }
 
 private:
+    struct Node {
+        Node* next;
+    };
+
+    static Node* init(void* begin, void* end,
+            size_t elementSize, size_t alignment, size_t extra) noexcept;
+
     Node* mHead = nullptr;
 
 #ifndef NDEBUG
@@ -219,7 +218,7 @@ private:
 #endif
 };
 
-class AtomicFreeList : private FreeListBase {
+class AtomicFreeList {
 public:
     AtomicFreeList() noexcept = default;
     AtomicFreeList(void* begin, void* end,
@@ -227,29 +226,93 @@ public:
     AtomicFreeList(const FreeList& rhs) = delete;
     AtomicFreeList& operator=(const FreeList& rhs) = delete;
 
-    void* get() noexcept {
-        Node* head = mHead.load(std::memory_order_relaxed);
-        while (head && !mHead.compare_exchange_weak(head, head->next,
-                std::memory_order_release, std::memory_order_relaxed)) {
+    void* pop() noexcept {
+        Node* const storage = mStorage;
+
+        HeadPtr currentHead = mHead.load();
+        while (currentHead.offset >= 0) {
+            // The value of "next" we load here might already contain application data if another
+            // thread raced ahead of us. But in that case, the computed "newHead" will be discarded
+            // since compare_exchange_weak fails. Then this thread will loop with the updated
+            // value of currentHead, and try again.
+            Node* const next = storage[currentHead.offset].next.load(std::memory_order_relaxed);
+            const HeadPtr newHead{ next ? int32_t(next - storage) : -1, currentHead.tag + 1 };
+            // In the rare case that the other thread that raced ahead of us already returned the 
+            // same mHead we just loaded, but it now has a different "next" value, the tag field will not 
+            // match, and compare_exchange_weak will fail and prevent that particular race condition.
+            if (mHead.compare_exchange_weak(currentHead, newHead)) {
+                // This assert needs to occur after we have validated that there was no race condition
+                // Otherwise, next might already contain application data, if another thread
+                // raced ahead of us after we loaded mHead, but before we loaded mHead->next.
+                assert(!next || next >= storage);
+                break;
+            }
         }
-        return head;
+        void* p = (currentHead.offset >= 0) ? (storage + currentHead.offset) : nullptr;
+        assert(!p || p >= storage);
+        return p;
     }
 
-    void put(void* p) noexcept {
-        assert(p);
-        Node* head = static_cast<Node*>(p);
-        head->next = mHead.load(std::memory_order_relaxed);
-        while (!mHead.compare_exchange_weak(head->next, head,
-                std::memory_order_release, std::memory_order_relaxed)) {
-        }
+    void push(void* p) noexcept {
+        Node* const storage = mStorage;
+        assert(p && p >= storage);
+        Node* const node = static_cast<Node*>(p);
+        HeadPtr currentHead = mHead.load();
+        HeadPtr newHead = { int32_t(node - storage), currentHead.tag + 1 };
+        do {
+            newHead.tag = currentHead.tag + 1;
+            Node* const n = (currentHead.offset >= 0) ? (storage + currentHead.offset) : nullptr;
+            node->next.store(n, std::memory_order_relaxed);
+        } while(!mHead.compare_exchange_weak(currentHead, newHead));
     }
 
-    void* getCurrent() noexcept {
-        return mHead.load(std::memory_order_relaxed);
+    void* getFirst() noexcept {
+        return mStorage + mHead.load(std::memory_order_relaxed).offset;
     }
 
 private:
-    std::atomic<Node*> mHead;
+    struct Node {
+        // This should be a regular (non-atomic) pointer, but this causes TSAN to complain
+        // about a data-race that exists but is benin. We always use this atomic<> in
+        // relaxed mode.
+        // The data race TSAN complains about is when a pop() is interrupted buy a
+        // pop() + push() just after mHead->next is read -- it appears as though it is written
+        // without synchronization (by the push), however in that case, the pop's CAS will fail
+        // and things will auto-correct.
+        //
+        //    Pop()                       |
+        //     |                          |
+        //   read head->next              |
+        //     |                        pop()
+        //     |                          |
+        //     |                        read head->next
+        //     |                         CAS, tag++
+        //     |                          |
+        //     |                        push()
+        //     |                          |
+        // [TSAN: data-race here]       write head->next
+        //     |                         CAS, tag++
+        //    CAS fails
+        //     |
+        //   read head->next
+        //     |
+        //    CAS, tag++
+        //
+        std::atomic<Node*> next;
+    };
+
+    // This struct is using a 32-bit offset into the arena rather than
+    // a direct pointer, because together with the 32-bit tag, it needs to 
+    // fit into 8 bytes. If it was any larger, it would not be possible to
+    // access it atomically.
+    struct alignas(8) HeadPtr {
+        int32_t offset;
+        uint32_t tag;
+    };
+
+    std::atomic<HeadPtr> mHead{};
+
+    Node* mStorage = nullptr;
 };
 
 // ------------------------------------------------------------------------------------------------
@@ -268,11 +331,11 @@ public:
         assert(size <= ELEMENT_SIZE);
         assert(alignment <= ALIGNMENT);
         assert(offset == OFFSET);
-        return mFreeList.get();
+        return mFreeList.pop();
     }
 
     void free(void* p) noexcept {
-        mFreeList.put(p);
+        mFreeList.push(p);
     }
 
     size_t getSize() const noexcept { return ELEMENT_SIZE; }
@@ -296,7 +359,7 @@ public:
     // API specific to this allocator
 
     void *getCurrent() noexcept {
-        return mFreeList.getCurrent();
+        return mFreeList.getFirst();
     }
 
 private:
@@ -406,7 +469,7 @@ private:
     }
 };
 
-using Mutex = std::mutex;
+using Mutex = utils::Mutex;
 
 } // namespace LockingPolicy
 
@@ -636,7 +699,7 @@ public:
     }
 
     void* allocate(size_t size, size_t alignment = 1) noexcept {
-        return mArena.template alloc(size, alignment, 0);
+        return mArena.template alloc<uint8_t>(size, alignment, 0);
     }
 
     template <typename T>

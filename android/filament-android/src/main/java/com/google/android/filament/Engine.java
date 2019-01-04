@@ -71,13 +71,19 @@ public class Engine {
      * - Other: none
      */
     public SwapChain createSwapChain(@NonNull Object surface) {
-        return createSwapChain(surface, 0);
+        return createSwapChain(surface, SwapChain.CONFIG_DEFAULT);
     }
 
     /**
      * Valid surface types:
      * - Android: Surface
      * - Other: none
+     *
+     * Flags: see CONFIG flags in SwapChain.
+     *
+     * @see SwapChain#CONFIG_DEFAULT
+     * @see SwapChain#CONFIG_TRANSPARENT
+     * @see SwapChain#CONFIG_READABLE
      */
     public SwapChain createSwapChain(@NonNull Object surface, long flags) {
         if (Platform.get().validateSurface(surface)) {
@@ -221,6 +227,10 @@ public class Engine {
         texture.clearNativeObject();
     }
 
+    public void destroyEntity(@Entity int entity) {
+        nDestroyEntity(getNativeObject(), entity);
+    }
+
     // Managers
 
     @NonNull
@@ -277,6 +287,7 @@ public class Engine {
     private static native void nDestroyMaterialInstance(long nativeEngine, long nativeMaterialInstance);
     private static native void nDestroySkybox(long nativeEngine, long nativeSkybox);
     private static native void nDestroyTexture(long nativeEngine, long nativeTexture);
+    private static native void nDestroyEntity(long nativeEngine, int entity);
     private static native long nGetTransformManager(long nativeEngine);
     private static native long nGetLightManager(long nativeEngine);
     private static native long nGetRenderableManager(long nativeEngine);

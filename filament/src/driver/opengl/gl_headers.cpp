@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#if defined(ANDROID) || defined(USE_EXTERNAL_GLES3)
+#if defined(ANDROID) || defined(USE_EXTERNAL_GLES3) || defined(__EMSCRIPTEN__)
 
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
@@ -33,7 +33,10 @@ PFNGLINSERTEVENTMARKEREXTPROC glInsertEventMarkerEXT;
 PFNGLPUSHGROUPMARKEREXTPROC glPushGroupMarkerEXT;
 PFNGLPOPGROUPMARKEREXTPROC glPopGroupMarkerEXT;
 #endif
-};
+#if GL_EXT_multisampled_render_to_texture
+PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC glFramebufferTexture2DMultisampleEXT;
+#endif
+}
 
 using namespace glext;
 
@@ -70,8 +73,34 @@ public:
                 (PFNGLPOPGROUPMARKEREXTPROC)eglGetProcAddress(
                         "glPopGroupMarkerEXT");
 #endif
+#if GL_EXT_multisampled_render_to_texture
+        glFramebufferTexture2DMultisampleEXT =
+                (PFNGLFRAMEBUFFERTEXTURE2DMULTISAMPLEEXTPROC)eglGetProcAddress(
+                        "glFramebufferTexture2DMultisampleEXT");
+#endif
     }
 } instance;
 } // namespace filament
+
+#endif
+
+#if defined(IOS)
+
+#include <OpenGLES/ES3/gl.h>
+#include <OpenGLES/ES3/glext.h>
+
+#include <utils/Panic.h>
+
+void glTexStorage2DMultisample (GLenum target, GLsizei samples, GLenum internalformat,
+            GLsizei width, GLsizei height, GLboolean fixedsamplelocations) {
+    PANIC_PRECONDITION("glTexStorage2DMultisample should not be called on iOS.");
+}
+
+namespace glext {
+    void glFramebufferTexture2DMultisampleEXT (GLenum target, GLenum attachment,
+            GLenum textarget, GLuint texture, GLint level, GLsizei samples) {
+        PANIC_PRECONDITION("glFramebufferTexture2DMultisampleEXT should not be called on iOS.");
+    }
+}
 
 #endif

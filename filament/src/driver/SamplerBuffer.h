@@ -24,7 +24,7 @@
 #include <utils/compiler.h>
 #include <utils/bitset.h>
 
-#include <filament/SamplerInterfaceBlock.h>
+#include <private/filament/SamplerInterfaceBlock.h>
 
 #include "driver/Handle.h"
 
@@ -46,7 +46,7 @@ public:
         SamplerParams s;
     };
 
-    SamplerBuffer() noexcept { }
+    SamplerBuffer() noexcept { } // NOLINT(modernize-use-equals-default)
 
     // create a sampler buffer
     explicit SamplerBuffer(size_t count) noexcept;
