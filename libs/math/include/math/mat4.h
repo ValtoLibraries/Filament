@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <limits>
 
+namespace filament {
 namespace math {
 // -------------------------------------------------------------------------------------
 namespace details {
@@ -319,26 +320,19 @@ public:
     }
 
     template <typename A>
-    static constexpr TMat44 translate(const TVec3<A>& t) {
+    static constexpr TMat44 translation(const TVec3<A>& t) {
         TMat44 r;
         r[3] = TVec4<T>{ t, 1 };
         return r;
     }
 
     template <typename A>
-    static constexpr TMat44 translate(A t) {
-        TMat44 r;
-        r[3] = TVec4<T>{ t, t, t, 1 };
-        return r;
-    }
-
-    template <typename A>
-    static constexpr TMat44 scale(const TVec3<A>& s) {
+    static constexpr TMat44 scaling(const TVec3<A>& s) {
         return TMat44{ TVec4<T>{ s, 1 } };
     }
 
     template <typename A>
-    static constexpr TMat44 scale(A s) {
+    static constexpr TMat44 scaling(A s) {
         return TMat44{ TVec4<T>{ s, s, s, 1 } };
     }
 };
@@ -509,7 +503,7 @@ constexpr TMat44<T> TMat44<T>::perspective(T fov, T aspect, T near, T far, TMat4
 
 /*
  * Returns a matrix representing the pose of a virtual camera looking towards -Z in its
- * local Y-up coordinate system. "eye" is where the camera is located, "center" is the points its
+ * local Y-up coordinate system. "eye" is where the camera is located, "center" is the point it's
  * looking at and "up" defines where the Y axis of the camera's local coordinate system is.
  */
 template <typename T>
@@ -603,14 +597,15 @@ typedef details::TMat44<float> mat4f;
 
 // ----------------------------------------------------------------------------------------
 }  // namespace math
+}  // namespace filament
 
 namespace std {
 template <typename T>
-constexpr void swap(math::details::TMat44<T>& lhs, math::details::TMat44<T>& rhs) noexcept {
+constexpr void swap( filament::math::details::TMat44<T>& lhs,  filament::math::details::TMat44<T>& rhs) noexcept {
     // This generates much better code than the default implementation
     // It's unclear why, I believe this is due to an optimization bug in the clang.
     //
-    //    math::details::TMat44<T> t(lhs);
+    //     filament::math::details::TMat44<T> t(lhs);
     //    lhs = rhs;
     //    rhs = t;
     //

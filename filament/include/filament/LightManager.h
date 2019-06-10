@@ -176,18 +176,18 @@ public:
      * Control the quality / performance of the shadow map associated to this light
      */
     struct ShadowOptions {
-        /** size of the shadow map in texels. Must be a power-of-two. */
+        /** Size of the shadow map in texels. Must be a power-of-two. */
         uint32_t mapSize = 1024;
 
-        /** constant bias in world units (e.g. meters) by which shadow are moved away from the
-         * light. Value must be between 0 and 2.
+        /** Constant bias in world units (e.g. meters) by which shadows are moved away from the
+         * light. 1mm by default.
          */
-        float constantBias = 0.01f;
+        float constantBias = 0.001f;
 
         /** Amount by which the maximum sampling error is scaled. The resulting value is used
-         * to move the shadow away from the fragment normal. Must be between 0 and 3.
+         * to move the shadow away from the fragment normal. Should be 1.0.
          */
-        float normalBias = 0.4f;
+        float normalBias = 1.0f;
 
         /** Distance from the camera after which shadows are clipped. this is used to clip
          * shadows that are too far and wouldn't contribute to the scene much, improving
@@ -210,6 +210,28 @@ public:
          * use the camera far distance.
          */
         float shadowFarHint = 100.0f;
+
+        /**
+         * Controls whether the shadow map should be optimized for resolution or stability.
+         * When set to true, all resolution enhancing features that can affect stability are
+         * disabling, resulting in significantly lower resolution shadows, albeit stable ones.
+         */
+        bool stable = false;
+
+        /**
+         * Constant bias in depth-resolution units by which shadows are moved away from the
+         * light. The default value of 0.5 is used to round depth values up.
+         * Generally this value shouldn't be changed or at least be small and positive.
+         */
+        float polygonOffsetConstant = 0.5f;
+
+        /**
+         * Bias based on the change in depth in depth-resolution units by which shadows are moved
+         * away from the light. The default value of 2.0 works well with SHADOW_SAMPLING_PCF_LOW.
+         * Generally this value is between 0.5 and the size in texel of the PCF filter.
+         * Setting this value correctly is essential for LISPSM shadow-maps.
+         */
+        float polygonOffsetSlope = 2.0f;
     };
 
     //! Use Builder to construct a Light object instance
@@ -410,14 +432,14 @@ public:
          * @param entity Entity to add the light component to.
          * @return Success if the component was created successfully, Error otherwise.
          *
+         * If exceptions are disabled and an error occurs, this function is a no-op.
+         *        Success can be checked by looking at the return value.
+         *
          * If this component already exists on the given entity, it is first destroyed as if
          * destroy(utils::Entity e) was called.
          *
          * @warning
          * Currently, only 2048 lights can be created on a given Engine.
-         *
-         * @error if exceptions are disabled and an error occurs, this function is a no-op.
-         *        Success can be checked by looking at the return value.
          *
          * @exception utils::PostConditionPanic if a runtime error occurred, such as running out of
          *            memory or other resources.
@@ -638,6 +660,20 @@ public:
      * @return the halo falloff
      */
     float getSunHaloFalloff(Instance i) const noexcept;
+
+    /**
+     * returns the shadow-map options for a given light
+     * @param i     Instance of the component obtained from getInstance().
+     * @return      A ShadowOption structure
+     */
+    ShadowOptions const& getShadowOptions(Instance i) const noexcept;
+
+    /**
+     * sets the shadow-map options for a given light
+     * @param i     Instance of the component obtained from getInstance().
+     * @param options  A ShadowOption structure
+     */
+    void setShadowOptions(Instance i, ShadowOptions const& options) noexcept;
 };
 
 } // namespace filament

@@ -27,6 +27,7 @@
 #include <math/compiler.h>
 #include <math/vec3.h>
 
+namespace filament {
 namespace math {
 namespace details {
 // -------------------------------------------------------------------------------------
@@ -244,12 +245,21 @@ public:
     friend inline
     QUATERNION<T> MATH_PURE slerp(const QUATERNION<T>& p, const QUATERNION<T>& q, T t) {
         // could also be computed as: pow(q * inverse(p), t) * p;
-        const T d = dot(p, q);
+        const T d = std::abs(dot(p, q));
+        static constexpr T value_eps = T(10) * std::numeric_limits<T>::epsilon();
+        // Prevent blowing up when slerping between two quaternions that are very near each other.
+        if ((T(1) - d) < value_eps) {
+            return normalize(lerp(p, q, t));
+        }
         const T npq = sqrt(dot(p, p) * dot(q, q));  // ||p|| * ||q||
-        const T a = std::acos(std::abs(d) / npq);
+        const T a = std::acos(d / npq);
         const T a0 = a * (1 - t);
         const T a1 = a * t;
-        const T isina = 1 / sin(a);
+        const T sina = sin(a);
+        if (sina < value_eps) {
+            return normalize(lerp(p, q, t));
+        }
+        const T isina = 1 / sina;
         const T s0 = std::sin(a0) * isina;
         const T s1 = std::sin(a1) * isina;
         // ensure we're taking the "short" side
@@ -297,5 +307,6 @@ public:
 // -------------------------------------------------------------------------------------
 }  // namespace details
 }  // namespace math
+}  // namespace filament
 
 #endif  // MATH_TQUATHELPERS_H_

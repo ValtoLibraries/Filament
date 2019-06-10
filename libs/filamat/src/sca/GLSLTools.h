@@ -113,6 +113,7 @@ private:
 class GLSLTools {
 public:
     static void init();
+    static void shutdown();
 
     // Return true if:
     // The shader is syntactically and semantically valid AND
@@ -120,27 +121,29 @@ public:
     // The shader features a prepareMaterial() function AND
     // prepareMaterial() is called at some point in material() call chain.
     bool analyzeFragmentShader(const std::string& shaderCode,
-            filament::driver::ShaderModel model,
-            filamat::MaterialBuilder::TargetApi targetApi) const noexcept;
+            filament::backend::ShaderModel model,
+            MaterialBuilder::TargetApi targetApi) const noexcept;
 
     bool analyzeVertexShader(const std::string& shaderCode,
-            filament::driver::ShaderModel model,
-            filamat::MaterialBuilder::TargetApi targetApi) const noexcept;
+            filament::backend::ShaderModel model,
+            MaterialBuilder::TargetApi targetApi) const noexcept;
 
     // Public for unit tests.
-    using Property = filamat::MaterialBuilder::Property;
+    using Property = MaterialBuilder::Property;
+    using ShaderModel = filament::backend::ShaderModel;
     // Use static code analysis on the fragment shader AST to guess properties used in user provided
     // glgl code. Populate properties accordingly.
-    bool findProperties(const filamat::MaterialBuilder& builder,
+    bool findProperties(const std::string& shaderCode,
             MaterialBuilder::PropertyList& properties,
-            MaterialBuilder::TargetApi targetApi = MaterialBuilder::TargetApi::OPENGL) const noexcept;
+            MaterialBuilder::TargetApi targetApi = MaterialBuilder::TargetApi::OPENGL,
+            ShaderModel model = ShaderModel::GL_CORE_41) const noexcept;
 
-    static int glslangVersionFromShaderModel(filament::driver::ShaderModel model);
+    static int glslangVersionFromShaderModel(filament::backend::ShaderModel model);
 
-    static EShMessages glslangFlagsFromTargetApi(filamat::MaterialBuilder::TargetApi targetApi);
+    static EShMessages glslangFlagsFromTargetApi(MaterialBuilder::TargetApi targetApi);
 
     static void prepareShaderParser(glslang::TShader& shader, EShLanguage language,
-            int version, filamat::MaterialBuilder::Optimization optimization);
+            int version, MaterialBuilder::Optimization optimization);
 
 private:
 

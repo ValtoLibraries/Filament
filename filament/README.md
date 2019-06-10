@@ -21,12 +21,16 @@ You can refer to the individual documentation files in `docs/` for more informat
 
 Filament is distributed as a set of static libraries you must link against:
 
-- `bluegl`, Required to render with OpenGL
+- `backend`, Required, implements all backends
+- `bluegl`, Required to render with OpenGL or OpenGL ES
 - `bluevk`, Required to render with Vulkan
 - `filabridge`, Support library for Filament
 - `filaflat`, Support library for Filament
 - `filament`, Main Filament library
+- `backend`, Filament render backend library
 - `utils`, Support library for Filament
+- `geometry`, Geometry helper library for Filament
+- `smol-v`, SPIR-V compression library
 
 To use Filament from Java you must use the following two libraries instead:
 - `filament-java.jar`, Contains Filament's Java classes
@@ -79,7 +83,7 @@ Copy your platform's Makefile below into a `Makefile` inside the same directory.
 ### Linux
 
 ```
-FILAMENT_LIBS=-lfilament -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils
+FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v
 CC=clang++
 
 main: main.o
@@ -97,11 +101,12 @@ clean:
 ### macOS
 
 ```
-FILAMENT_LIBS=-lfilament -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils
+FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v
+FRAMEWORKS=-framework Cocoa -framework Metal -framework CoreVideo
 CC=clang++
 
 main: main.o
-	$(CC) -Llib/x86_64/ main.o $(FILAMENT_LIBS) -framework Cocoa -o main
+	$(CC) -Llib/x86_64/ main.o $(FILAMENT_LIBS) $(FRAMEWORKS) -o main
 
 main.o: main.cpp
 	$(CC) -Iinclude/ -std=c++14 -c main.cpp
@@ -114,16 +119,25 @@ clean:
 
 ### Windows
 
+Note that the static libraries distributed for Windows include several
+variants: mt, md, mtd, mdd. These correspond to the [run-time library
+flags](https://docs.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=vs-2017)
+`/MT`, `/MD`, `/MTd`, and `/MDd`, respectively. Here we use the mt variant.
+
+When building Filament from source, the `USE_STATIC_CRT` CMake option can be
+used to change the run-time library version.
+
 ```
-FILAMENT_LIBS=lib/x86_64/filament.lib lib/x86_64/bluegl.lib \
-              lib/x86_64/filabridge.lib lib/x86_64/filaflat.lib lib/x86_64/utils.lib
+FILAMENT_LIBS=lib/x86_64/mt/filament.lib lib/x86_64/mt/backend.lib lib/x86_64/mt/bluegl.lib \
+              lib/x86_64/mt/filabridge.lib lib/x86_64/mt/filaflat.lib lib/x86_64/mt/utils.lib \
+              lib/x86_64/mt/geometry.lib lib/x86_64/mt/smol-v.lib
 CC=clang-cl.exe
 
 main.exe: main.obj
 	$(CC) main.obj $(FILAMENT_LIBS) gdi32.lib user32.lib opengl32.lib
 
 main.obj: main.cpp
-	$(CC) /Iinclude/ /std:c++14 /c main.cpp
+	$(CC) /MT /Iinclude/ /std:c++14 /c main.cpp
 
 clean:
 	del main.exe main.obj
@@ -145,3 +159,15 @@ FEngine (64 bits) created at 0x106471000 (threading is enabled)
 On Windows, you'll need to open up a Visual Studio Native Tools Command Prompt
 and invoke `nmake` instead of `make`.
 
+
+### Generating C++ documentation
+
+To generate the documentation you must first install `doxygen` and `graphviz`, then run the 
+following commands:
+
+```
+$ cd filament/filament
+$ doxygen docs/doxygen/filament.doxygen
+```
+
+Finally simply open `docs/html/index.html` in your web browser.

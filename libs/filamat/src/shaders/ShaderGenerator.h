@@ -19,7 +19,6 @@
 
 #include <algorithm>
 
-#include <filament/EngineEnums.h>
 #include <filament/MaterialEnums.h>
 
 #include <filamat/MaterialBuilder.h>
@@ -27,6 +26,7 @@
 #include "MaterialInfo.h"
 
 #include <utils/CString.h>
+#include <utils/sstream.h>
 
 namespace filamat {
 
@@ -42,13 +42,13 @@ public:
             utils::CString const& materialVertexCode,
             size_t vertexLineOffset) noexcept;
 
-    const std::string createVertexProgram(filament::driver::ShaderModel sm,
-            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetApi codeGenTargetApi,
+    const std::string createVertexProgram(filament::backend::ShaderModel sm,
+            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetLanguage targetLanguage,
             MaterialInfo const& material, uint8_t variantKey,
             filament::Interpolation interpolation,
             filament::VertexDomain vertexDomain) const noexcept;
-    const std::string createFragmentProgram(filament::driver::ShaderModel sm,
-            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetApi codeGenTargetApi,
+    const std::string createFragmentProgram(filament::backend::ShaderModel sm,
+            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetLanguage targetLanguage,
             MaterialInfo const& material, uint8_t variantKey,
             filament::Interpolation interpolation) const noexcept;
 
@@ -61,7 +61,7 @@ public:
      * fixup step can be used to turn the samplers back into external samplers after
      * the optimizations have been applied.
      */
-    void fixupExternalSamplers(filament::driver::ShaderModel sm, std::string& shader,
+    void fixupExternalSamplers(filament::backend::ShaderModel sm, std::string& shader,
             MaterialInfo const& material) const noexcept;
 
 private:
@@ -74,13 +74,13 @@ private:
 };
 
 struct ShaderPostProcessGenerator {
-    static const std::string createPostProcessVertexProgram(filament::driver::ShaderModel sm,
-            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetApi codeGenTargetApi,
+    static const std::string createPostProcessVertexProgram(filament::backend::ShaderModel sm,
+            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetLanguage targetLanguage,
             filament::PostProcessStage variant, uint8_t firstSampler) noexcept;
-    static const std::string createPostProcessFragmentProgram(filament::driver::ShaderModel sm,
-            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetApi codeGenTargetApi,
+    static const std::string createPostProcessFragmentProgram(filament::backend::ShaderModel sm,
+            MaterialBuilder::TargetApi targetApi, MaterialBuilder::TargetLanguage targetLanguage,
             filament::PostProcessStage variant, uint8_t firstSampler) noexcept;
-    static void generatePostProcessStageDefines(std::stringstream& vs, CodeGenerator const& cg,
+    static void generatePostProcessStageDefines(utils::io::sstream& vs, CodeGenerator const& cg,
             filament::PostProcessStage variant) noexcept;
 };
 

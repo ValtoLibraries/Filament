@@ -151,6 +151,22 @@ public class MaterialInstance {
         nSetPolygonOffset(getNativeObject(), scale, constant);
     }
 
+    public void setMaskThreshold(float threshold) {
+        nSetMaskThreshold(getNativeObject(), threshold);
+    }
+
+    public void setSpecularAntiAliasingVariance(float variance) {
+        nSetSpecularAntiAliasingVariance(getNativeObject(), variance);
+    }
+
+    public void setSpecularAntiAliasingThreshold(float threshold) {
+        nSetSpecularAntiAliasingThreshold(getNativeObject(), threshold);
+    }
+
+    public void setDoubleSided(boolean doubleSided) {
+        nSetDoubleSided(getNativeObject(), doubleSided);
+    }
+
     long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed MaterialInstance");
@@ -210,5 +226,14 @@ public class MaterialInstance {
     private static native void nUnsetScissor(long nativeMaterialInstance);
 
     private static native void nSetPolygonOffset(long nativeMaterialInstance,
-        float scale, float constant);
+            float scale, float constant);
+
+    private static native void nSetMaskThreshold(long nativeMaterialInstance, float threshold);
+
+    private static native void nSetSpecularAntiAliasingVariance(long nativeMaterialInstance,
+            float variance);
+    private static native void nSetSpecularAntiAliasingThreshold(long nativeMaterialInstance,
+            float threshold);
+
+    private static native void nSetDoubleSided(long nativeMaterialInstance, boolean doubleSided);
 }

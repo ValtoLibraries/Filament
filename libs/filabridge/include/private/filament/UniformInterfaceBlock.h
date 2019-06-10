@@ -17,7 +17,7 @@
 #ifndef TNT_FILAMENT_DRIVER_UNIFORMINTERFACEBLOCK_H
 #define TNT_FILAMENT_DRIVER_UNIFORMINTERFACEBLOCK_H
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/CString.h>
 #include <utils/compiler.h>
@@ -40,13 +40,11 @@ public:
     UniformInterfaceBlock& operator=(UniformInterfaceBlock&& rhs) /*noexcept*/;
     ~UniformInterfaceBlock() noexcept;
 
-    using Type = driver::UniformType;
-    using Precision = driver::Precision;
+    using Type = backend::UniformType;
+    using Precision = backend::Precision;
 
     class Builder {
     public:
-        ~Builder() noexcept;
-
         // Give a name to this uniform interface block
         Builder& name(utils::CString const& interfaceBlockName);
         Builder& name(utils::CString&& interfaceBlockName);

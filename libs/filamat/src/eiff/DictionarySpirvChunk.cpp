@@ -20,7 +20,7 @@
 
 namespace filamat {
 
-DictionarySpirvChunk::DictionarySpirvChunk(BlobDictionary& dictionary) :
+DictionarySpirvChunk::DictionarySpirvChunk(BlobDictionary&& dictionary) :
         Chunk(ChunkType::DictionarySpirv), mDictionary(dictionary){
 }
 
@@ -43,4 +43,4 @@ void DictionarySpirvChunk::flatten(Flattener& f) {
     }
 }
 
-} // namespace filaflat
+} // namespace filamat

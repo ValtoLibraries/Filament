@@ -83,7 +83,7 @@ public:
 private:
     int mAttributeName;
     static int sGlobalAttribute;
-    staric constexpr int FOO_COUNT = 10;
+    static constexpr int FOO_COUNT = 10;
     enum {
         ONE, TWO, THREE
     };
@@ -171,7 +171,7 @@ private:
 
 ### Misc
 
-- Use `auto` only when the type appears on the same line or with iterators
+- Use `auto` only when the type appears on the same line or with iterators and lambdas.
 ```
 auto foo = new Foo();
 for (auto& i : collection) { }

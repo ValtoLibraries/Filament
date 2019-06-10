@@ -32,6 +32,7 @@ public class View {
     private DynamicResolutionOptions mDynamicResolution;
     private RenderQuality mRenderQuality;
     private DepthPrepass mDepthPrepass = DepthPrepass.DEFAULT;
+    private AmbientOcclusionOptions mAmbientOcclusionOptions;
 
     public static class DynamicResolutionOptions {
         public boolean enabled = false;
@@ -42,6 +43,12 @@ public class View {
         public float minScale = 0.5f;
         public float maxScale = 1.0f;
         public int history = 9;
+    }
+
+    public static class AmbientOcclusionOptions {
+        public float radius = 0.3f;
+        public float bias = 0.005f;
+        public float power = 0.0f;
     }
 
     public enum QualityLevel {
@@ -55,9 +62,24 @@ public class View {
         public QualityLevel hdrColorBuffer = QualityLevel.HIGH;
     }
 
+    public enum AmbientOcclusion {
+        NONE,
+        SSAO
+    }
+
     public enum AntiAliasing {
         NONE,
         FXAA
+    }
+
+    public enum ToneMapping {
+        LINEAR,
+        ACES
+    }
+
+    public enum Dithering {
+        NONE,
+        TEMPORAL
     }
 
     public enum DepthPrepass {
@@ -160,6 +182,24 @@ public class View {
         return AntiAliasing.values()[nGetAntiAliasing(getNativeObject())];
     }
 
+    public void setToneMapping(@NonNull ToneMapping type) {
+        nSetToneMapping(getNativeObject(), type.ordinal());
+    }
+
+    @NonNull
+    public ToneMapping getToneMapping() {
+        return ToneMapping.values()[nGetToneMapping(getNativeObject())];
+    }
+
+    public void setDithering(@NonNull Dithering dithering) {
+        nSetDithering(getNativeObject(), dithering.ordinal());
+    }
+
+    @NonNull
+    public Dithering getDithering() {
+        return Dithering.values()[nGetDithering(getNativeObject())];
+    }
+
     public void setDynamicResolutionOptions(@NonNull DynamicResolutionOptions options) {
         mDynamicResolution = options;
         nSetDynamicResolutionOptions(getNativeObject(),
@@ -224,6 +264,28 @@ public class View {
         nSetDynamicLightingOptions(getNativeObject(), zLightNear, zLightFar);
     }
 
+    public void setAmbientOcclusion(@NonNull AmbientOcclusion ao) {
+        nSetAmbientOcclusion(getNativeObject(), ao.ordinal());
+    }
+
+    @NonNull
+    public AmbientOcclusion getAmbientOcclusion() {
+        return AmbientOcclusion.values()[nGetAmbientOcclusion(getNativeObject())];
+    }
+
+    public void setAmbientOcclusionOptions(@NonNull AmbientOcclusionOptions options) {
+        mAmbientOcclusionOptions = options;
+        nSetAmbientOcclusionOptions(getNativeObject(), options.radius, options.bias, options.power);
+    }
+
+    @NonNull
+    public AmbientOcclusionOptions getAmbientOcclusionOptions() {
+        if (mAmbientOcclusionOptions == null) {
+            mAmbientOcclusionOptions = new AmbientOcclusionOptions();
+        }
+        return mAmbientOcclusionOptions;
+    }
+
     long getNativeObject() {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Calling method on destroyed View");
@@ -257,6 +319,10 @@ public class View {
     private static native int nGetSampleCount(long nativeView);
     private static native void nSetAntiAliasing(long nativeView, int type);
     private static native int nGetAntiAliasing(long nativeView);
+    private static native void nSetToneMapping(long nativeView, int type);
+    private static native int nGetToneMapping(long nativeView);
+    private static native void nSetDithering(long nativeView, int dithering);
+    private static native int nGetDithering(long nativeView);
     private static native void nSetDynamicResolutionOptions(long nativeView,
             boolean enabled, boolean homogeneousScaling,
             float targetFrameTimeMilli, float headRoomRatio, float scaleRate,
@@ -268,4 +334,7 @@ public class View {
     private static native boolean nIsPostProcessingEnabled(long nativeView);
     private static native void nSetFrontFaceWindingInverted(long nativeView, boolean inverted);
     private static native boolean nIsFrontFaceWindingInverted(long nativeView);
+    private static native void nSetAmbientOcclusion(long nativeView, int ordinal);
+    private static native int nGetAmbientOcclusion(long nativeView);
+    private static native void nSetAmbientOcclusionOptions(long nativeView, float radius, float bias, float power);
 }

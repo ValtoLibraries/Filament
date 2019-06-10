@@ -14,22 +14,18 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_SAMPLERINTERFACEBLOCK_H
-#define TNT_FILAMENT_DRIVER_SAMPLERINTERFACEBLOCK_H
+#ifndef TNT_FILAMENT_SAMPLERINTERFACEBLOCK_H
+#define TNT_FILAMENT_SAMPLERINTERFACEBLOCK_H
 
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/compiler.h>
 #include <utils/CString.h>
 
-#include <math/vec4.h>
-
 #include <tsl/robin_map.h>
 
 #include <vector>
-
-#include <assert.h>
 
 namespace filament {
 
@@ -42,13 +38,15 @@ public:
     SamplerInterfaceBlock& operator=(SamplerInterfaceBlock&& rhs) /*noexcept*/;
     ~SamplerInterfaceBlock() noexcept;
 
-    using Type = driver::SamplerType;
-    using Format = driver::SamplerFormat;
-    using Precision = driver::Precision;
-    using SamplerParams = driver::SamplerParams;
+    using Type = backend::SamplerType;
+    using Format = backend::SamplerFormat;
+    using Precision = backend::Precision;
+    using SamplerParams = backend::SamplerParams;
 
     class Builder {
     public:
+        Builder() = default;
+        Builder(Builder const&) = default;
         ~Builder() noexcept;
 
         // Give a name to this sampler interface block
@@ -65,9 +63,11 @@ public:
         Builder& add(utils::CString const& samplerName, Type type, Format format,
                 Precision precision = Precision::MEDIUM,
                 bool multisample = false) noexcept;
+
         Builder& add(utils::CString&& samplerName, Type type, Format format,
                 Precision precision = Precision::MEDIUM,
                 bool multisample = false) noexcept;
+
         Builder& add(utils::StaticString const& samplerName, Type type, Format format,
                 Precision precision = Precision::MEDIUM,
                 bool multisample = false) noexcept;
@@ -96,7 +96,7 @@ public:
         std::vector<Entry> mEntries;
     };
 
-    struct SamplerInfo {
+    struct SamplerInfo { // NOLINT(cppcoreguidelines-pro-type-member-init)
         SamplerInfo() noexcept = default;
         SamplerInfo(utils::CString name, uint8_t offset, Type type, Format format,
                 Precision precision, bool multisample) noexcept
@@ -115,7 +115,7 @@ public:
     // name of this sampler interface block
     const utils::CString& getName() const noexcept { return mName; }
 
-    // size needed to store the samplers described by this interface block in a SamplerBuffer
+    // size needed to store the samplers described by this interface block in a SamplerGroup
     size_t getSize() const noexcept { return mSize; }
 
     // list of information records for each sampler
@@ -130,6 +130,8 @@ public:
 
     bool isEmpty() const noexcept { return mSamplersInfoList.empty(); }
 
+    static utils::CString getUniformName(const char* group, const char* sampler) noexcept;
+
 private:
     friend class Builder;
 
@@ -143,4 +145,4 @@ private:
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_DRIVER_SAMPLERINTERFACEBLOCK_H
+#endif // TNT_FILAMENT_SAMPLERINTERFACEBLOCK_H

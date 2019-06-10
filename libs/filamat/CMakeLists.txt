@@ -4,6 +4,11 @@ project(filamat)
 set(TARGET         filamat)
 set(PUBLIC_HDR_DIR include)
 
+# filamat is split into two targets: filamat, and filamat_lite.
+# filamat_lite forgoes SPIRV-V / MSL output, static analysis, and optimization in favor of a smaller
+# binary size.
+# Both libraries use the same public header files.
+
 # ==================================================================================================
 # Sources and headers
 # ==================================================================================================
@@ -13,44 +18,61 @@ set(HDRS
         include/filamat/Package.h
         include/filamat/PostprocessMaterialBuilder.h)
 
-set(PRIVATE_HDRS
-        src/eiff/BlobDictionary.h
+set(COMMON_PRIVATE_HDRS
         src/eiff/Chunk.h
         src/eiff/ChunkContainer.h
         src/eiff/DictionaryTextChunk.h
-        src/eiff/DictionarySpirvChunk.h
         src/eiff/Flattener.h
-        src/eiff/TextChunk.h
         src/eiff/LineDictionary.h
         src/eiff/MaterialTextChunk.h
         src/eiff/MaterialInterfaceBlockChunk.h
-        src/eiff/MaterialSpirvChunk.h
         src/eiff/ShaderEntry.h
-        src/eiff/SimpleFieldChunk.h
-        src/sca/ASTHelpers.h
-        src/sca/GLSLTools.h
-        src/sca/builtinResource.h
-        src/GLSLPostProcessor.h)
+        src/eiff/SimpleFieldChunk.h)
 
-set(SRCS
-        src/eiff/BlobDictionary.cpp
+set(COMMON_SRCS
         src/eiff/Chunk.cpp
         src/eiff/ChunkContainer.cpp
         src/eiff/DictionaryTextChunk.cpp
-        src/eiff/DictionarySpirvChunk.cpp
         src/eiff/LineDictionary.cpp
         src/eiff/MaterialTextChunk.cpp
-        src/eiff/MaterialSpirvChunk.cpp
         src/eiff/MaterialInterfaceBlockChunk.cpp
         src/eiff/SimpleFieldChunk.cpp
-        src/sca/ASTHelpers.cpp
-        src/sca/GLSLTools.cpp
         src/shaders/CodeGenerator.cpp
         src/shaders/ShaderGenerator.cpp
         src/Enums.cpp
-        src/GLSLPostProcessor.cpp
         src/MaterialBuilder.cpp
         src/PostprocessMaterialBuilder.cpp)
+
+# Sources and headers for filamat
+
+set(PRIVATE_HDRS
+        ${COMMON_PRIVATE_HDRS}
+        src/eiff/BlobDictionary.h
+        src/eiff/DictionarySpirvChunk.h
+        src/eiff/MaterialSpirvChunk.h
+        src/GLSLPostProcessor.h
+        src/sca/ASTHelpers.h
+        src/sca/GLSLTools.h
+        src/sca/builtinResource.h)
+
+set(SRCS
+        ${COMMON_SRCS}
+        src/eiff/BlobDictionary.cpp
+        src/eiff/DictionarySpirvChunk.cpp
+        src/eiff/MaterialSpirvChunk.cpp
+        src/sca/ASTHelpers.cpp
+        src/sca/GLSLTools.cpp
+        src/GLSLPostProcessor.cpp)
+
+# Sources and headers for filamat lite
+
+set(LITE_PRIVATE_HDRS
+        ${COMMON_PRIVATE_HDRS}
+        src/sca/GLSLToolsLite.h)
+
+set(LITE_SRCS
+        ${COMMON_SRCS}
+        src/sca/GLSLToolsLite.cpp)
 
 # ==================================================================================================
 # Include and target definitions
@@ -58,10 +80,15 @@ set(SRCS
 include_directories(${PUBLIC_HDR_DIR})
 include_directories(${CMAKE_BINARY_DIR})
 
+# Filamat
 add_library(${TARGET} STATIC ${HDRS} ${PRIVATE_HDRS} ${SRCS})
 target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_link_libraries(${TARGET} shaders filabridge utils smol-v)
 
-target_link_libraries(${TARGET} shaders filabridge filaflat utils smol-v)
+# Filamat Lite
+add_library(filamat_lite STATIC ${HDRS} ${LITE_PRIVATE_HDRS} ${LITE_SRCS})
+target_include_directories(filamat_lite PUBLIC ${PUBLIC_HDR_DIR})
+target_link_libraries(filamat_lite shaders filabridge utils)
 
 # We are being naughty and accessing private headers here
 # For spirv-tools, we're just following glslang's example
@@ -89,13 +116,61 @@ target_compile_options(${TARGET} PRIVATE
         $<$<PLATFORM_ID:Linux>:-fPIC>
 )
 
+target_compile_options(filamat_lite PRIVATE
+# TODO: use hidden by default and expose what we need (we'll need to do the same in dependencies)
+#        -fvisibility=hidden
+        $<$<PLATFORM_ID:Linux>:-fPIC>
+)
+
+target_compile_definitions(filamat_lite PRIVATE FILAMAT_LITE)
+
 # ==================================================================================================
 # Installation
 # ==================================================================================================
-# Currently disabled because we don't need it
-# To properly support Vulkan, filamat needs to support SPIR-V compilation
-# install(DIRECTORY ${PUBLIC_HDR_DIR}/filamat DESTINATION include)
-# install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
+
+# Filamat has dependencies on a bunch of SPIRV-related libraries. To make things simpler, we bundle
+# them together into a single shared library and copy this into the installation folder. This
+# requires us to explicitly list the dependencies below, as CMake doesn't have a way to recursively
+# query dependencies.
+set(FILAMAT_DEPS
+        OGLCompiler
+        OSDependent
+        SPIRV
+        SPIRV-Tools
+        SPIRV-Tools-opt
+        SPVRemapper
+        filamat
+        glslang
+        spirv-cross-core
+        spirv-cross-glsl
+        spirv-cross-msl
+        )
+
+# Loop through the dependent libraries and query their location on disk.
+set(FILAMAT_DEPS_FILES )
+foreach(DEPENDENCY ${FILAMAT_DEPS})
+    list(APPEND FILAMAT_DEPS_FILES "$<TARGET_FILE:${DEPENDENCY}>")
+endforeach()
+
+# Run the combine-static-libs script to bundle the libraries together.
+set(FILAMAT_COMBINED_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libfilamat_combined.a")
+set(COMBINE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../../build/linux/combine-static-libs.sh")
+if (WIN32)
+    set(COMBINE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../../build/windows/combine-static-libs.bat")
+    set(CMAKE_AR "lib.exe")
+endif()
+add_custom_command(
+    TARGET filamat POST_BUILD
+    COMMAND "${COMBINE_SCRIPT}" "${CMAKE_AR}" "${FILAMAT_COMBINED_OUTPUT}" ${FILAMAT_DEPS_FILES}
+    COMMENT "Combining filamat dependencies into single shared library"
+    VERBATIM
+)
+
+set(FILAMAT_LIB_NAME ${CMAKE_STATIC_LIBRARY_PREFIX}filamat${CMAKE_STATIC_LIBRARY_SUFFIX})
+install(FILES "${FILAMAT_COMBINED_OUTPUT}" DESTINATION lib/${DIST_DIR} RENAME ${FILAMAT_LIB_NAME})
+install(DIRECTORY ${PUBLIC_HDR_DIR}/filamat DESTINATION include)
+
+install(TARGETS filamat_lite ARCHIVE DESTINATION lib/${DIST_DIR})
 
 # ==================================================================================================
 # Tests
@@ -110,3 +185,13 @@ add_executable(${TARGET} ${SRCS})
 target_include_directories(${TARGET} PRIVATE src)
 
 target_link_libraries(${TARGET} filamat gtest)
+
+set(TARGET test_filamat_lite)
+set(SRCS
+        tests/test_filamat_lite.cpp)
+
+add_executable(${TARGET} ${SRCS})
+
+target_include_directories(${TARGET} PRIVATE src)
+
+target_link_libraries(${TARGET} filamat_lite gtest)

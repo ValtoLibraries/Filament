@@ -23,6 +23,7 @@
 #include <sys/types.h>
 
 
+namespace filament {
 namespace math {
 // -------------------------------------------------------------------------------------
 
@@ -84,7 +85,7 @@ public:
     constexpr TVec4() = default;
 
     // handles implicit conversion to a tvec4. must not be explicit.
-    template<typename A, typename = typename std::enable_if<std::is_arithmetic<A>::value >::type>
+    template<typename A>
     constexpr TVec4(A v) : x(v), y(v), z(v), w(v) { }
 
     template<typename A, typename B, typename C, typename D>
@@ -97,7 +98,6 @@ public:
     constexpr TVec4(const TVec3<A>& v, B w) : x(v.x), y(v.y), z(v.z), w(w) { }
 
     template<typename A>
-    explicit
     constexpr TVec4(const TVec4<A>& v) : x(v.x), y(v.y), z(v.z), w(v.w) { }
 };
 
@@ -105,19 +105,23 @@ public:
 
 // ----------------------------------------------------------------------------------------
 
-typedef details::TVec4<double> double4;
-typedef details::TVec4<float> float4;
-typedef details::TVec4<half> half4;
-typedef details::TVec4<int32_t> int4;
-typedef details::TVec4<uint32_t> uint4;
-typedef details::TVec4<int16_t> short4;
-typedef details::TVec4<uint16_t> ushort4;
-typedef details::TVec4<int8_t> byte4;
-typedef details::TVec4<uint8_t> ubyte4;
-typedef details::TVec4<bool> bool4;
+template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value >::type>
+using vec4 = details::TVec4<T>;
+
+using double4 = vec4<double>;
+using float4 = vec4<float>;
+using half4 = vec4<half>;
+using int4 = vec4<int32_t>;
+using uint4 = vec4<uint32_t>;
+using short4 = vec4<int16_t>;
+using ushort4 = vec4<uint16_t>;
+using byte4 = vec4<int8_t>;
+using ubyte4 = vec4<uint8_t>;
+using bool4 = vec4<bool>;
 
 
 // ----------------------------------------------------------------------------------------
 }  // namespace math
+}  // namespace filament
 
 #endif  // MATH_VEC4_H_

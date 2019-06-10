@@ -32,6 +32,8 @@
 
 #include <string>
 #include <vector>
+#include <map>
+#include <string>
 
 #include <fcntl.h>
 #if !defined(WIN32)
@@ -42,9 +44,109 @@
 
 using namespace filament;
 using namespace filamesh;
-using namespace math;
+using namespace filament::math;
 
 #define DEFAULT_MATERIAL "DefaultMaterial"
+
+//------------------------------------------------------------------------------
+//-------------------------Begin Material Registry------------------------------
+//------------------------------------------------------------------------------
+
+struct MeshReader::MaterialRegistry::MaterialRegistryImpl {
+    std::map<utils::CString, filament::MaterialInstance*> materialMap;
+};
+
+// Create the implementation
+MeshReader::MaterialRegistry::MaterialRegistry()
+    : mImpl(new MaterialRegistryImpl()) {
+}
+
+// Deep copy the implementation
+MeshReader::MaterialRegistry::MaterialRegistry(const MaterialRegistry& rhs)
+    : mImpl(new MaterialRegistryImpl(*rhs.mImpl)) {
+}
+
+MeshReader::MaterialRegistry& MeshReader::MaterialRegistry::operator=(const MaterialRegistry& rhs) {
+    *mImpl = *rhs.mImpl;
+    return *this;
+}
+// Delete the implementation
+MeshReader::MaterialRegistry::~MaterialRegistry() {
+    delete mImpl;
+}
+
+// Default move construction
+MeshReader::MaterialRegistry::MaterialRegistry(MaterialRegistry&& rhs) 
+    : mImpl(nullptr) {
+    std::swap(mImpl, rhs.mImpl);
+}
+
+MeshReader::MaterialRegistry& MeshReader::MaterialRegistry::operator=(MaterialRegistry&& rhs) {
+    delete mImpl;
+    mImpl = nullptr;
+    std::swap(mImpl, rhs.mImpl);
+    return *this;
+}
+
+filament::MaterialInstance* MeshReader::MaterialRegistry::getMaterialInstance(
+        const utils::CString& name) {
+    // Try to find the requested material
+    auto miter = mImpl->materialMap.find(name);
+    // If it exists, return it
+    if (miter != mImpl->materialMap.end()) {
+        return miter->second;
+    }
+    // If it doesn't exist, give a dummy value
+    return nullptr;
+}
+
+void MeshReader::MaterialRegistry::registerMaterialInstance(const utils::CString& name,
+        filament::MaterialInstance* materialInstance) {
+    // Add the material to our map
+    mImpl->materialMap[name] = materialInstance;
+}
+
+void MeshReader::MaterialRegistry::unregisterMaterialInstance(const utils::CString& name) {
+    auto miter = mImpl->materialMap.find(name);
+    // Remove it from the map if it existed
+    if (miter != mImpl->materialMap.end()) {
+        mImpl->materialMap.erase(miter);
+    }
+}
+void MeshReader::MaterialRegistry::unregisterAll() {
+    mImpl->materialMap.clear();
+}
+
+std::size_t MeshReader::MaterialRegistry::numRegistered() const noexcept {
+    return mImpl->materialMap.size();
+}
+
+void MeshReader::MaterialRegistry::getRegisteredMaterials(filament::MaterialInstance** materialList,
+        utils::CString* materialNameList) const {
+    for (const auto& materialPair : mImpl->materialMap) {
+        (*materialNameList++) = materialPair.first;
+        (*materialList++) = materialPair.second;
+    }
+}
+
+void MeshReader::MaterialRegistry::getRegisteredMaterials(
+        filament::MaterialInstance** materialList) const {
+    for (const auto& materialPair : mImpl->materialMap) {
+        (*materialList++) = materialPair.second;
+    }
+}
+
+void MeshReader::MaterialRegistry::getRegisteredMaterialNames(
+        utils::CString* materialNameList) const {
+    for (const auto& materialPair : mImpl->materialMap) {
+        (*materialNameList++) = materialPair.first;
+    }
+}
+
+//------------------------------------------------------------------------------
+//---------------------------End Material Registry------------------------------
+//------------------------------------------------------------------------------
+
 
 static size_t fileSize(int fd) {
     size_t filesize;
@@ -53,8 +155,10 @@ static size_t fileSize(int fd) {
     return filesize;
 }
 
+namespace filamesh {
+
 MeshReader::Mesh MeshReader::loadMeshFromFile(filament::Engine* engine, const utils::Path& path,
-        const MaterialRegistry& materials) {
+        MaterialRegistry& materials) {
 
     Mesh mesh;
 
@@ -85,13 +189,13 @@ MeshReader::Mesh MeshReader::loadMeshFromBuffer(filament::Engine* engine,
         void const* data, Callback destructor, void* user,
         MaterialInstance* defaultMaterial) {
     MaterialRegistry reg;
-    reg[DEFAULT_MATERIAL] = defaultMaterial;
+    reg.registerMaterialInstance(utils::CString(DEFAULT_MATERIAL), defaultMaterial);
     return loadMeshFromBuffer(engine, data, destructor, user, reg);
 }
 
 MeshReader::Mesh MeshReader::loadMeshFromBuffer(filament::Engine* engine,
         void const* data, Callback destructor, void* user,
-        const MaterialRegistry& materials) {
+        MaterialRegistry& materials) {
     const uint8_t* p = (const uint8_t*) data;
     if (strncmp(MAGICID, (const char *) p, 8)) {
         utils::slog.e << "Magic string not found." << utils::io::endl;
@@ -173,21 +277,17 @@ MeshReader::Mesh MeshReader::loadMeshFromBuffer(filament::Engine* engine,
             .attribute(VertexAttribute::COLOR, 0, VertexBuffer::AttributeType::UBYTE4,
                         header->offsetColor, uint8_t(header->strideColor))
             .attribute(VertexAttribute::UV0, 0, uvtype,
-                        header->offsetUV0, uint8_t(header->strideUV0));
-
-    if (header->flags & TEXCOORD_SNORM16) {
-        vbb.normalized(VertexAttribute::UV0);
-    }
+                        header->offsetUV0, uint8_t(header->strideUV0))
+            .normalized(VertexAttribute::UV0, header->flags & TEXCOORD_SNORM16);
 
     constexpr uint32_t uintmax = std::numeric_limits<uint32_t>::max();
     const bool hasUV1 = header->offsetUV1 != uintmax && header->strideUV1 != uintmax;
 
     if (hasUV1) {
-        vbb.attribute(VertexAttribute::UV1, 0, VertexBuffer::AttributeType::HALF2,
-                header->offsetUV1, uint8_t(header->strideUV1));
-        if (header->flags & TEXCOORD_SNORM16) {
-            vbb.normalized(VertexAttribute::UV1);
-        }
+        vbb
+            .attribute(VertexAttribute::UV1, 0, VertexBuffer::AttributeType::HALF2,
+                    header->offsetUV1, uint8_t(header->strideUV1))
+            .normalized(VertexAttribute::UV1);
     }
 
     mesh.vertexBuffer = vbb.build(*engine);
@@ -251,15 +351,23 @@ MeshReader::Mesh MeshReader::loadMeshFromBuffer(filament::Engine* engine,
 
     RenderableManager::Builder builder(header->parts);
     builder.boundingBox(header->aabb);
-    const auto defaultmi = materials.at(DEFAULT_MATERIAL);
+    const auto defaultmi = materials.getMaterialInstance(utils::CString(DEFAULT_MATERIAL));
     for (size_t i = 0; i < header->parts; i++) {
         builder.geometry(i, RenderableManager::PrimitiveType::TRIANGLES,
                             mesh.vertexBuffer, mesh.indexBuffer, parts[i].offset,
                             parts[i].minIndex, parts[i].maxIndex, parts[i].indexCount);
-        const auto miter = materials.find(partsMaterial[i]);
-        builder.material(i, miter == materials.end() ? defaultmi : miter->second);
+        const utils::CString materialName(partsMaterial[i].c_str(), partsMaterial[i].size());
+        const auto mat = materials.getMaterialInstance(materialName);
+        if (mat == nullptr) {
+            builder.material(i, defaultmi);
+            materials.registerMaterialInstance(materialName, defaultmi);
+        } else {
+            builder.material(i, mat);
+        }
     }
     builder.build(*engine, mesh.renderable);
 
     return mesh;
 }
+
+} // namespace filamesh

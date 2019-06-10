@@ -39,6 +39,13 @@ Demonstrates how to render into a `TextureView` instead of a `SurfaceView`:
 
 ![Texture View](../../docs/images/samples/sample_texture_view.jpg)
 
+### `material-builder`
+
+Demonstrates how to programatically generate Filament materials, as opposed to compiling them on the
+host machine:
+
+![Material Builder](../../docs/images/samples/sample_image_based_lighting.jpg)
+
 ## Prerequisites
 
 Before you start, make sure to read [Filament's README](../../README.md). You need to be able to
@@ -72,8 +79,7 @@ SDK. This includes the project `filament-android` in the parent directory.
 
 ## Android Studio
 
-Due to issues with composite builds in Android Studio 3.1, it is highly recommended to use
-Android Studio 3.2 or higher to open this project.
+You must use Android Studio 3.3 or higher to open these projects.
 
 ## Compiling
 

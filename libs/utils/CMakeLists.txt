@@ -17,6 +17,7 @@ set(DIST_HDRS
         ${PUBLIC_HDR_DIR}/${TARGET}/EntityInstance.h
         ${PUBLIC_HDR_DIR}/${TARGET}/EntityManager.h
         ${PUBLIC_HDR_DIR}/${TARGET}/CString.h
+        ${PUBLIC_HDR_DIR}/${TARGET}/Path.h
         ${PUBLIC_HDR_DIR}/${TARGET}/unwindows.h
 )
 
@@ -32,9 +33,11 @@ set(SRCS
         src/JobSystem.cpp
         src/Log.cpp
         src/NameComponentManager.cpp
+        src/ostream.cpp
         src/Panic.cpp
         src/Path.cpp
         src/Profiler.cpp
+        src/sstream.cpp
         src/Systrace.cpp
         )
 if (WIN32)
@@ -104,16 +107,19 @@ set(TEST_SRCS
         test/test_Entity.cpp
         test/test_JobSystem.cpp
         test/test_StructureOfArrays.cpp
+        test/test_sstream.cpp
         test/test_utils_main.cpp
         test/test_Zip2Iterator.cpp
         test/test_BinaryTreeArray.cpp
 )
 
 # The Path tests are platform-specific
-if (WIN32)
-    list(APPEND TEST_SRCS test/test_WinPath.cpp)
-else()
-    list(APPEND TEST_SRCS test/test_Path.cpp)
+if (NOT WEBGL)
+    if (WIN32)
+        list(APPEND TEST_SRCS test/test_WinPath.cpp)
+    else()
+        list(APPEND TEST_SRCS test/test_Path.cpp)
+    endif()
 endif()
 
 add_executable(test_${TARGET} ${TEST_SRCS})

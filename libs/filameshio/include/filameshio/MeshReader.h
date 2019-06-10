@@ -18,10 +18,7 @@
 #define TNT_FILAMENT_FILAMESHIO_MESHREADER_H
 
 #include <utils/Entity.h>
-#include <utils/Path.h>
-
-#include <map>
-#include <string>
+#include <utils/CString.h>
 
 namespace filament {
     class Engine;
@@ -29,6 +26,13 @@ namespace filament {
     class IndexBuffer;
     class MaterialInstance;
 }
+
+namespace utils {
+    class Path;
+}
+
+namespace filamesh {
+
 
 /**
  * This API can be used to read meshes stored in the "filamesh" format produced
@@ -38,7 +42,39 @@ namespace filament {
 class MeshReader {
 public:
     using Callback = void(*)(void* buffer, size_t size, void* user);
-    using MaterialRegistry = std::map<std::string, filament::MaterialInstance*>;
+
+    // Class to track material instances
+    class MaterialRegistry {
+    public:
+         MaterialRegistry();
+         MaterialRegistry(const MaterialRegistry& rhs);
+         MaterialRegistry& operator=(const MaterialRegistry& rhs);
+         ~MaterialRegistry();
+         MaterialRegistry(MaterialRegistry&&);
+         MaterialRegistry& operator=(MaterialRegistry&&);
+
+         filament::MaterialInstance* getMaterialInstance(const utils::CString& name);
+
+         void registerMaterialInstance(const utils::CString& name,
+                 filament::MaterialInstance* materialInstance);
+
+         void unregisterMaterialInstance(const utils::CString& name);
+
+         void unregisterAll();
+
+         std::size_t numRegistered() const noexcept;
+
+         void getRegisteredMaterials(filament::MaterialInstance** materialList,
+                 utils::CString* materialNameList) const;
+
+         void getRegisteredMaterials(filament::MaterialInstance** materialList) const;
+
+         void getRegisteredMaterialNames(utils::CString* materialNameList) const;
+
+     private:
+         struct MaterialRegistryImpl;
+         MaterialRegistryImpl* mImpl;
+    };
 
     struct Mesh {
         utils::Entity renderable;
@@ -55,7 +91,7 @@ public:
      */
     static Mesh loadMeshFromFile(filament::Engine* engine,
             const utils::Path& path,
-            const MaterialRegistry& materials);
+            MaterialRegistry& materials);
 
     /**
      * Loads a filamesh renderable from an in-memory buffer. The material registry
@@ -66,7 +102,7 @@ public:
      */
     static Mesh loadMeshFromBuffer(filament::Engine* engine,
             void const* data, Callback destructor, void* user,
-            const MaterialRegistry& materials);
+            MaterialRegistry& materials);
 
     /**
      * Loads a filamesh renderable from an in-memory buffer. The material registry
@@ -77,5 +113,7 @@ public:
             void const* data, Callback destructor, void* user,
             filament::MaterialInstance* defaultMaterial);
 };
+
+} // namespace filamesh
 
 #endif // TNT_FILAMENT_FILAMESHIO_MESHREADER_H

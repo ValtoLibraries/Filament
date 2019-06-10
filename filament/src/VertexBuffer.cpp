@@ -20,6 +20,8 @@
 
 #include "FilamentAPI-impl.h"
 
+#include <geometry/SurfaceOrientation.h>
+
 #include <math/mat3.h>
 #include <math/norm.h>
 #include <math/quat.h>
@@ -31,10 +33,11 @@
 namespace filament {
 
 using namespace details;
-using namespace math;
+using namespace backend;
+using namespace filament::math;
 
 struct VertexBuffer::BuilderDetails {
-    VertexBuffer::Builder::AttributeData mAttributes[MAX_ATTRIBUTE_BUFFERS_COUNT];
+    FVertexBuffer::AttributeData mAttributes[MAX_ATTRIBUTE_BUFFER_COUNT];
     AttributeBitset mDeclaredAttributes;
     uint32_t mVertexCount = 0;
     uint8_t mBufferCount = 0;
@@ -73,8 +76,8 @@ VertexBuffer::Builder& VertexBuffer::Builder::attribute(VertexAttribute attribut
         byteStride = (uint8_t)attributeSize;
     }
 
-    if (size_t(attribute) < MAX_ATTRIBUTE_BUFFERS_COUNT &&
-        size_t(bufferIndex) < MAX_ATTRIBUTE_BUFFERS_COUNT) {
+    if (size_t(attribute) < MAX_ATTRIBUTE_BUFFER_COUNT &&
+        size_t(bufferIndex) < MAX_ATTRIBUTE_BUFFER_COUNT) {
 
 #ifndef NDEBUG
         if (byteOffset & 0x3) {
@@ -87,23 +90,28 @@ VertexBuffer::Builder& VertexBuffer::Builder::attribute(VertexAttribute attribut
         }
 #endif
 
-        AttributeData& entry = mImpl->mAttributes[attribute];
+        FVertexBuffer::AttributeData& entry = mImpl->mAttributes[attribute];
         entry.buffer = bufferIndex;
         entry.offset = byteOffset;
         entry.stride = byteStride;
         entry.type = attributeType;
         if (hasIntegerTarget(attribute)) {
-            entry.flags |= Driver::Attribute::FLAG_INTEGER_TARGET;
+            entry.flags |= Attribute::FLAG_INTEGER_TARGET;
         }
         mImpl->mDeclaredAttributes.set(attribute);
     }
     return *this;
 }
 
-VertexBuffer::Builder& VertexBuffer::Builder::normalized(VertexAttribute attribute) noexcept {
-    if (size_t(attribute) < MAX_ATTRIBUTE_BUFFERS_COUNT) {
-        AttributeData& entry = mImpl->mAttributes[attribute];
-        entry.flags |= Driver::Attribute::FLAG_NORMALIZED;
+VertexBuffer::Builder& VertexBuffer::Builder::normalized(VertexAttribute attribute,
+        bool normalized) noexcept {
+    if (size_t(attribute) < MAX_ATTRIBUTE_BUFFER_COUNT) {
+        FVertexBuffer::AttributeData& entry = mImpl->mAttributes[attribute];
+        if (normalized) {
+            entry.flags |= Attribute::FLAG_NORMALIZED;
+        } else {
+            entry.flags &= ~Attribute::FLAG_NORMALIZED;
+        }
     }
     return *this;
 }
@@ -114,6 +122,10 @@ VertexBuffer* VertexBuffer::Builder::build(Engine& engine) {
     }
 
     if (!ASSERT_PRECONDITION_NON_FATAL(mImpl->mBufferCount > 0, "bufferCount cannot be 0")) {
+        return nullptr;
+    }
+    if (!ASSERT_PRECONDITION_NON_FATAL(mImpl->mBufferCount <= MAX_ATTRIBUTE_BUFFER_COUNT,
+            "bufferCount cannot be more than %d", MAX_ATTRIBUTE_BUFFER_COUNT)) {
         return nullptr;
     }
 
@@ -131,13 +143,13 @@ FVertexBuffer::FVertexBuffer(FEngine& engine, const VertexBuffer::Builder& build
     mDeclaredAttributes = builder->mDeclaredAttributes;
     uint8_t attributeCount = (uint8_t) mDeclaredAttributes.count();
 
-    Driver::AttributeArray attributeArray;
+    AttributeArray attributeArray;
 
-    static_assert(attributeArray.size() == MAX_ATTRIBUTE_BUFFERS_COUNT,
-            "Driver::Attribute and Builder::Attribute arrays must match");
+    static_assert(attributeArray.size() == MAX_ATTRIBUTE_BUFFER_COUNT,
+            "Attribute and Builder::Attribute arrays must match");
 
-    static_assert(sizeof(Driver::Attribute) == sizeof(Builder::AttributeData),
-            "Driver::Attribute and Builder::Attribute must match");
+    static_assert(sizeof(Attribute) == sizeof(AttributeData),
+            "Attribute and Builder::Attribute must match");
 
     auto const& declaredAttributes = mDeclaredAttributes;
     auto const& attributes = mAttributes;
@@ -154,7 +166,7 @@ FVertexBuffer::FVertexBuffer(FEngine& engine, const VertexBuffer::Builder& build
 
     FEngine::DriverApi& driver = engine.getDriverApi();
     mHandle = driver.createVertexBuffer(
-            mBufferCount, attributeCount, mVertexCount, attributeArray, driver::BufferUsage::STATIC);
+            mBufferCount, attributeCount, mVertexCount, attributeArray, backend::BufferUsage::STATIC);
 }
 
 void FVertexBuffer::terminate(FEngine& engine) {
@@ -167,15 +179,10 @@ size_t FVertexBuffer::getVertexCount() const noexcept {
 }
 
 void FVertexBuffer::setBufferAt(FEngine& engine, uint8_t bufferIndex,
-        driver::BufferDescriptor&& buffer, uint32_t byteOffset, uint32_t byteSize) {
-
-    if (byteSize == 0) {
-        byteSize = uint32_t(buffer.size);
-    }
-
+        backend::BufferDescriptor&& buffer, uint32_t byteOffset) {
     if (bufferIndex < mBufferCount) {
-        engine.getDriverApi().updateVertexBuffer(mHandle, bufferIndex,
-                std::move(buffer), byteOffset, byteSize);
+        engine.getDriverApi().updateVertexBuffer(mHandle,
+                bufferIndex, std::move(buffer), byteOffset);
     } else {
         ASSERT_PRECONDITION_NON_FATAL(bufferIndex < mBufferCount,
                 "bufferIndex must be < bufferCount");
@@ -188,73 +195,34 @@ void FVertexBuffer::setBufferAt(FEngine& engine, uint8_t bufferIndex,
 // Trampoline calling into private implementation
 // ------------------------------------------------------------------------------------------------
 
-using namespace details;
+using namespace filament::details;
 
 size_t VertexBuffer::getVertexCount() const noexcept {
     return upcast(this)->getVertexCount();
 }
 
 void VertexBuffer::setBufferAt(Engine& engine, uint8_t bufferIndex,
-        driver::BufferDescriptor&& buffer, uint32_t byteOffset, uint32_t byteSize) {
-    upcast(this)->setBufferAt(upcast(engine), bufferIndex,
-            std::move(buffer), byteOffset, byteSize);
+        backend::BufferDescriptor&& buffer, uint32_t byteOffset) {
+    upcast(this)->setBufferAt(upcast(engine), bufferIndex, std::move(buffer), byteOffset);
 }
 
 void VertexBuffer::populateTangentQuaternions(const QuatTangentContext& ctx) {
-    if (!ASSERT_PRECONDITION_NON_FATAL(ctx.normals, "Normals must be provided")) {
-        return;
-    }
+    auto quats = geometry::SurfaceOrientation::Builder()
+        .vertexCount(ctx.quatCount)
+        .normals(ctx.normals, ctx.normalsStride)
+        .tangents(ctx.tangents, ctx.tangentsStride)
+        .build();
 
-    // Define a small lambda that converts fp32 into the desired output format.
-    void (*writeQuat)(math::quatf, uint8_t*);
     switch (ctx.quatType) {
         case HALF4:
-            writeQuat = [] (quatf inquat, uint8_t* outquat) {
-                *((quath*) outquat) = quath(inquat);
-            };
+            quats.getQuats((quath*) ctx.outBuffer, ctx.quatCount, ctx.outStride);
             break;
         case SHORT4:
-            writeQuat = [] (quatf inquat, uint8_t* outquat) {
-                *((short4*) outquat) = packSnorm16(inquat.xyzw);
-            };
+            quats.getQuats((short4*) ctx.outBuffer, ctx.quatCount, ctx.outStride);
             break;
         case FLOAT4:
-            writeQuat = [] (quatf inquat, uint8_t* outquat) {
-                *((quatf*) outquat) = inquat;
-            };
+            quats.getQuats((quatf*) ctx.outBuffer, ctx.quatCount, ctx.outStride);
             break;
-    }
-
-    const float3* normal = ctx.normals;
-    const size_t nstride = ctx.normalsStride ? ctx.normalsStride : sizeof(math::float3);
-    uint8_t* outquat = (uint8_t*) ctx.outBuffer;
-
-    // If tangents are not provided, simply cross N with arbitrary vector (1, 0, 0)
-    if (!ctx.tangents) {
-        for (size_t qindex = 0, qcount = ctx.quatCount; qindex < qcount; ++qindex) {
-            float3 n = *normal;
-            float3 b = normalize(cross(n, float3{1, 0, 0}));
-            float3 t = cross(n, b);
-            writeQuat(mat3f::packTangentFrame({t, b, n}), outquat);
-            normal = (const float3*) (((const uint8_t*) normal) + nstride);
-            outquat += ctx.outStride;
-        }
-        return;
-    }
-
-    const float3* tanvec = &ctx.tangents->xyz;
-    const float* tandir = &ctx.tangents->w;
-    const size_t tstride = ctx.tangentsStride ? ctx.tangentsStride : sizeof(math::float4);
-
-    for (size_t qindex = 0, qcount = ctx.quatCount; qindex < qcount; ++qindex) {
-        float3 n = *normal;
-        float3 t = *tanvec;
-        float3 b = *tandir > 0 ? cross(t, n) : cross(n, t);
-        writeQuat(mat3f::packTangentFrame({t, b, n}), outquat);
-        normal = (const float3*) (((const uint8_t*) normal) + nstride);
-        tanvec = (const float3*) (((const uint8_t*) tanvec) + tstride);
-        tandir = (const float*) (((const uint8_t*) tandir) + tstride);
-        outquat += ctx.outStride;
     }
 }
 

@@ -291,7 +291,7 @@ TEST(AllocatorTest, STLAllocator) {
         void onAlloc(void* p, size_t size, size_t alignment, size_t extra) {
             allocations.push_back(p);
         }
-        void onFree(void* p) {
+        void onFree(void* p, size_t) {
             auto pos = std::find(allocations.begin(), allocations.end(), p);
             EXPECT_TRUE(pos != allocations.end());
             allocations.erase(pos);
@@ -302,10 +302,23 @@ TEST(AllocatorTest, STLAllocator) {
 
     using Arena = Arena<LinearAllocator, LockingPolicy::NoLock, Tracking>;
     Arena arena("arena", 1204);
+    Arena arena2("arena2", 1204);
     STLAllocator<int, Arena> allocator(arena);
+    STLAllocator<int, Arena> allocator2(arena2);
+    EXPECT_TRUE(allocator != allocator2);
+    EXPECT_TRUE(allocator == allocator);
+
+    STLAllocator<int, Arena>::rebind<char>::other charAllocator(arena);
+    EXPECT_TRUE(allocator == charAllocator);
+
+    STLAllocator<int, Arena> allocatorCopy(allocator);
+    EXPECT_TRUE(allocator == allocatorCopy);
+
+    STLAllocator<int, Arena> allocatorFromCharCopy(charAllocator);
+    EXPECT_TRUE(allocatorFromCharCopy == charAllocator);
+
 
     {
-#if !defined(WIN32)
         std::vector<int, STLAllocator<int, Arena>> vector(allocator);
         vector.push_back(1);
         EXPECT_GT(arena.getListener().allocations.size(), 0);
@@ -313,10 +326,6 @@ TEST(AllocatorTest, STLAllocator) {
         vector.push_back(3);
         vector.push_back(4);
         vector.clear();
-#else
-        // Disabled under windows due to incompatibility between clang and Microsoft STL.
-#       warning "Custom Allocator Test Disabled."
-#endif
     }
 
     EXPECT_EQ(0, arena.getListener().allocations.size());

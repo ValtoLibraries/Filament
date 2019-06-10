@@ -19,6 +19,10 @@
 #include <utils/Panic.h>
 #include <utils/compiler.h>
 
+#include <utility>
+
+#include <stdint.h>
+
 using namespace utils;
 
 namespace filament {
@@ -107,6 +111,26 @@ const SamplerInterfaceBlock::SamplerInfo* SamplerInterfaceBlock::getSamplerInfo(
         return nullptr;
     }
     return &mSamplersInfoList[pos->second];
+}
+
+utils::CString SamplerInterfaceBlock::getUniformName(const char* group, const char* sampler) noexcept {
+    char uniformName[256];
+
+    // sampler interface block name
+    char* const prefix = std::copy_n(group,
+            std::min(sizeof(uniformName) / 2, strlen(group)), uniformName);
+    if (uniformName[0] >= 'A' && uniformName[0] <= 'Z') {
+        uniformName[0] |= 0x20; // poor man's tolower()
+    }
+    *prefix = '_';
+
+    char* last = std::copy_n(sampler,
+            std::min(sizeof(uniformName) / 2 - 2, strlen(sampler)),
+            prefix + 1);
+    *last++ = 0; // null terminator
+    assert(last <= std::end(uniformName));
+
+    return CString{ uniformName, size_t(last - uniformName) - 1u };
 }
 
 } // namespace filament

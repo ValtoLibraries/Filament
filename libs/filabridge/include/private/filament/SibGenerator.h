@@ -17,6 +17,9 @@
 #ifndef TNT_FILABRIDGE_SIBGENERATOR_H
 #define TNT_FILABRIDGE_SIBGENERATOR_H
 
+#include <private/filament/EngineEnums.h>
+#include <backend/DriverEnums.h>
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -32,24 +35,23 @@ public:
 };
 
 struct PerViewSib {
-    static SamplerInterfaceBlock const& getSib() noexcept {
-        return SibGenerator::getPerViewSib();
-    }
-    // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
+    // indices of each samplers in this SamplerInterfaceBlock (see: getPerViewSib())
     static constexpr size_t SHADOW_MAP     = 0;
     static constexpr size_t RECORDS        = 1;
     static constexpr size_t FROXELS        = 2;
     static constexpr size_t IBL_DFG_LUT    = 3;
     static constexpr size_t IBL_SPECULAR   = 4;
-    static constexpr size_t IBL_IRRADIANCE = 5;
+    static constexpr size_t SSAO           = 5;
+
+    static constexpr size_t SAMPLER_COUNT = 6;
 };
 
 struct PostProcessSib {
-    static SamplerInterfaceBlock const& getSib() noexcept {
-        return SibGenerator::getPostProcessSib();
-    }
-    // indices of each samplers in this SamplerInterfaceBlock (see: getSib())
+    // indices of each samplers in this SamplerInterfaceBlock (see: getPostProcessSib())
     static constexpr size_t COLOR_BUFFER   = 0;
+    static constexpr size_t DEPTH_BUFFER   = 1;
+
+    static constexpr size_t SAMPLER_COUNT = 2;
 };
 
 }

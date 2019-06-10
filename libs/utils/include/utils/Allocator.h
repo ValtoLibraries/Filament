@@ -18,16 +18,17 @@
 #define TNT_UTILS_ALLOCATOR_H
 
 
-#include <assert.h>
-#include <stddef.h>
-#include <stdlib.h>
-
-#include <atomic>
-#include <mutex>
-
 #include <utils/compiler.h>
 #include <utils/memalign.h>
 #include <utils/Mutex.h>
+
+#include <atomic>
+#include <mutex>
+#include <type_traits>
+
+#include <assert.h>
+#include <stddef.h>
+#include <stdlib.h>
 
 namespace utils {
 
@@ -123,7 +124,7 @@ public:
 
     // LinearAllocator shouldn't have a free() method
     // it's only needed to be compatible with STLAllocator<> below
-    void free(void*) UTILS_RESTRICT noexcept { }
+    void free(void*, size_t) UTILS_RESTRICT noexcept { }
 
 private:
     void* mBegin = nullptr;
@@ -154,6 +155,10 @@ public:
 
     void free(void* p) noexcept {
         aligned_free(p);
+    }
+
+    void free(void* p, size_t) noexcept {
+        free(p);
     }
 
     // Allocators can't be copied
@@ -334,7 +339,7 @@ public:
         return mFreeList.pop();
     }
 
-    void free(void* p) noexcept {
+    void free(void* p, size_t = ELEMENT_SIZE) noexcept {
         mFreeList.push(p);
     }
 
@@ -597,7 +602,7 @@ public:
     void destroy(T* p) noexcept {
         if (p) {
             p->~T();
-            this->free((void*)p);
+            this->free((void*)p, sizeof(T));
         }
     }
 
@@ -734,26 +739,36 @@ public:
     struct rebind { using other = STLAllocator<OTHER, ARENA>; };
 
 public:
-    explicit STLAllocator(ARENA& arena) : mArena(arena) { }
+    // we don't make this explicit, so that we can initialize a vector using a STLAllocator
+    // from an Arena, avoiding to have to repeat the vector type.
+    STLAllocator(ARENA& arena) : mArena(arena) { } // NOLINT(google-explicit-constructor)
+
+    template<typename U>
+    explicit STLAllocator(STLAllocator<U, ARENA> const& rhs) : mArena(rhs.mArena) { }
 
     TYPE* allocate(std::size_t n) {
-        return static_cast<TYPE *>(mArena.alloc(n * sizeof(n), alignof(TYPE)));
+        return static_cast<TYPE *>(mArena.alloc(n * sizeof(TYPE), alignof(TYPE)));
     }
 
     void deallocate(TYPE* p, std::size_t n) {
-        mArena.free(p);
+        mArena.free(p, n * sizeof(TYPE));
+    }
+
+    // these should be out-of-class friends, but this doesn't seem to work with some compilers
+    // which complain about multiple definition each time a STLAllocator<> is instantiated.
+    template <typename U, typename A>
+    bool operator==(const STLAllocator<U, A>& lhs) noexcept {
+        return std::addressof(mArena) == std::addressof(lhs.mArena);
+    }
+
+    template <typename U, typename A>
+    bool operator!=(const STLAllocator<U, A>& lhs) noexcept {
+        return !operator==(lhs);
     }
 
 private:
-    template <typename T, typename U, typename A>
-    friend bool operator==(const STLAllocator<T, A>& rhs, const STLAllocator<U, A>& lhs) {
-        return &rhs.mArena == &lhs.mArena;
-    }
-
-    template <typename T, typename U, typename A>
-    friend bool operator!=(const STLAllocator<T, A>& rhs, const STLAllocator<U, A>& lhs) {
-        return !operator==(rhs, lhs);
-    }
+    template<typename U, typename A>
+    friend class STLAllocator;
 
     ARENA& mArena;
 };

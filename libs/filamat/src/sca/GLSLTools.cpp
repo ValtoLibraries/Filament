@@ -18,7 +18,6 @@
 
 #include <cstring>
 
-#include <filament/EngineEnums.h>
 #include <filament/MaterialEnums.h>
 #include <private/filament/UniformInterfaceBlock.h>
 #include <private/filament/SamplerInterfaceBlock.h>
@@ -39,7 +38,7 @@
 using namespace utils;
 using namespace glslang;
 using namespace ASTUtils;
-using namespace filament::driver;
+using namespace filament::backend;
 
 namespace filamat {
 
@@ -133,27 +132,18 @@ bool GLSLTools::analyzeVertexShader(const std::string& shaderCode, ShaderModel m
 }
 
 void GLSLTools::init() {
-    // According to glslang, InitializeProcess should be called exactly once per process.
-    static bool initializeCalled = false;
-    if (!initializeCalled) {
-        InitializeProcess();
-        initializeCalled = true;
-    }
+    // Each call to InitializeProcess must be matched with a call to FinalizeProcess.
+    InitializeProcess();
 }
 
-bool GLSLTools::findProperties(const filamat::MaterialBuilder& builderIn,
+void GLSLTools::shutdown() {
+    FinalizeProcess();
+}
+
+bool GLSLTools::findProperties(const std::string& shaderCode,
         MaterialBuilder::PropertyList& properties,
-        MaterialBuilder::TargetApi targetApi) const noexcept {
-    filamat::MaterialBuilder builder(builderIn);
-
-    // Some fields in MaterialInputs only exist if the property is set (e.g: normal, subsurface
-    // for cloth shading model). Give our shader all properties. This will enable us to parse and
-    // static code analyse the AST.
-    MaterialBuilder::PropertyList allProperties;
-    std::fill_n(allProperties, filament::MATERIAL_PROPERTIES_COUNT, true);
-
-    ShaderModel model;
-    std::string shaderCode = builder.peek(ShaderType::FRAGMENT, model, allProperties);
+        MaterialBuilder::TargetApi targetApi,
+        ShaderModel model) const noexcept {
     const char* shaderCString = shaderCode.c_str();
 
     TShader tShader(EShLanguage::EShLangFragment);

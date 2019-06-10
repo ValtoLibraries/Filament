@@ -24,9 +24,9 @@
 #include <private/filament/UniformInterfaceBlock.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 
-#include <private/filament/Variant.h>
+#include <private/filament/SibGenerator.h>
 
-#include "GLSLPostProcessor.h"
+#include "MaterialVariants.h"
 
 #include "shaders/MaterialInfo.h"
 #include "shaders/ShaderGenerator.h"
@@ -41,11 +41,18 @@
 #include "eiff/DictionaryTextChunk.h"
 #include "eiff/DictionarySpirvChunk.h"
 
+#ifndef FILAMAT_LITE
+#include "GLSLPostProcessor.h"
 #include "sca/GLSLTools.h"
+#else
+#include "sca/GLSLToolsLite.h"
+#endif
 
 using namespace utils;
 
 namespace filamat {
+
+std::atomic<int> MaterialBuilderBase::materialBuilderClients(0);
 
 void MaterialBuilderBase::prepare() {
     mCodeGenPermutations.clear();
@@ -61,33 +68,50 @@ void MaterialBuilderBase::prepare() {
     }
 
     // OpenGL is a special case. If we're doing any optimization, then we need to go to Spir-V.
-    TargetApi glCodeGenTargetApi = mOptimization > MaterialBuilder::Optimization::PREPROCESSOR ?
-            TargetApi::VULKAN : TargetApi::OPENGL;
+    TargetLanguage glTargetLanguage = mOptimization > MaterialBuilder::Optimization::PREPROCESSOR ?
+            TargetLanguage::SPIRV : TargetLanguage::GLSL;
 
     // Build a list of codegen permutations, which is useful across all types of material builders.
     // The shader model loop starts at 1 to skip ShaderModel::UNKNOWN.
-    for (uint8_t i = 1; i < filament::driver::SHADER_MODEL_COUNT; i++) {
+    for (uint8_t i = 1; i < filament::backend::SHADER_MODEL_COUNT; i++) {
         if (!mShaderModels.test(i)) {
             continue; // skip this shader model since it was not requested.
         }
         switch (mTargetApi) {
             case TargetApi::ALL:
-                mCodeGenPermutations.push_back({i, TargetApi::OPENGL, glCodeGenTargetApi});
-                mCodeGenPermutations.push_back({i, TargetApi::VULKAN, TargetApi::VULKAN});
+                mCodeGenPermutations.push_back({i, TargetApi::OPENGL, glTargetLanguage});
+                mCodeGenPermutations.push_back({i, TargetApi::VULKAN, TargetLanguage::SPIRV});
+                mCodeGenPermutations.push_back({i, TargetApi::METAL, TargetLanguage::SPIRV});
                 break;
             case TargetApi::OPENGL:
-                mCodeGenPermutations.push_back({i, TargetApi::OPENGL, glCodeGenTargetApi});
+                mCodeGenPermutations.push_back({i, TargetApi::OPENGL, glTargetLanguage});
                 break;
             case TargetApi::VULKAN:
-                mCodeGenPermutations.push_back({i, TargetApi::VULKAN, TargetApi::VULKAN});
+                mCodeGenPermutations.push_back({i, TargetApi::VULKAN, TargetLanguage::SPIRV});
+            case TargetApi::METAL:
+                mCodeGenPermutations.push_back({i, TargetApi::METAL, TargetLanguage::SPIRV});
                 break;
         }
     }
 }
 
 MaterialBuilder::MaterialBuilder() : mMaterialName("Unnamed") {
-    std::fill_n(mProperties, filament::MATERIAL_PROPERTIES_COUNT, false);
+    std::fill_n(mProperties, MATERIAL_PROPERTIES_COUNT, false);
     mShaderModels.reset();
+}
+
+void MaterialBuilderBase::init() {
+    materialBuilderClients++;
+#ifndef FILAMAT_LITE
+    GLSLTools::init();
+#endif
+}
+
+void MaterialBuilderBase::shutdown() {
+    materialBuilderClients--;
+#ifndef FILAMAT_LITE
+    GLSLTools::shutdown();
+#endif
 }
 
 MaterialBuilder& MaterialBuilder::name(const char* name) noexcept {
@@ -123,7 +147,7 @@ MaterialBuilder& MaterialBuilder::variable(Variable v, const char* name) noexcep
         case Variable::CUSTOM1:
         case Variable::CUSTOM2:
         case Variable::CUSTOM3:
-            assert(size_t(v) < filament::MATERIAL_VARIABLES_COUNT);
+            assert(size_t(v) < MATERIAL_VARIABLES_COUNT);
             mVariables[size_t(v)] = CString(name);
             break;
     }
@@ -174,6 +198,11 @@ MaterialBuilder& MaterialBuilder::blending(BlendingMode blending) noexcept {
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::postLightingBlending(BlendingMode blending) noexcept {
+    mPostLightingBlendingMode = blending;
+    return *this;
+}
+
 MaterialBuilder& MaterialBuilder::vertexDomain(VertexDomain domain) noexcept {
     mVertexDomain = domain;
     return *this;
@@ -202,7 +231,7 @@ MaterialBuilder& MaterialBuilder::depthCulling(bool enable) noexcept {
 
 MaterialBuilder& MaterialBuilder::doubleSided(bool doubleSided) noexcept {
     mDoubleSided = doubleSided;
-    mDoubleSidedSet = true;
+    mDoubleSidedCapability = true;
     return *this;
 }
 
@@ -213,6 +242,41 @@ MaterialBuilder& MaterialBuilder::maskThreshold(float threshold) noexcept {
 
 MaterialBuilder& MaterialBuilder::shadowMultiplier(bool shadowMultiplier) noexcept {
     mShadowMultiplier = shadowMultiplier;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::specularAntiAliasing(bool specularAntiAliasing) noexcept {
+    mSpecularAntiAliasing = specularAntiAliasing;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::specularAntiAliasingVariance(float screenSpaceVariance) noexcept {
+    mSpecularAntiAliasingVariance = screenSpaceVariance;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::specularAntiAliasingThreshold(float threshold) noexcept {
+    mSpecularAntiAliasingThreshold = threshold;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::clearCoatIorChange(bool clearCoatIorChange) noexcept {
+    mClearCoatIorChange = clearCoatIorChange;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::flipUV(bool flipUV) noexcept {
+    mFlipUV = flipUV;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::multiBounceAmbientOcclusion(bool multiBounceAO) noexcept {
+    mMultiBounceAO = multiBounceAO;
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::specularAmbientOcclusion(bool specularAO) noexcept {
+    mSpecularAO = specularAO;
     return *this;
 }
 
@@ -271,8 +335,17 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
         }
     }
 
+    if (mSpecularAntiAliasing) {
+        ibb.add("_specularAntiAliasingVariance", 1, UniformType::FLOAT);
+        ibb.add("_specularAntiAliasingThreshold", 1, UniformType::FLOAT);
+    }
+
     if (mBlendingMode == BlendingMode::MASKED) {
-        ibb.add("maskThreshold", 1, UniformType::FLOAT);
+        ibb.add("_maskThreshold", 1, UniformType::FLOAT);
+    }
+
+    if (mDoubleSidedCapability) {
+        ibb.add("_doubleSided", 1, UniformType::BOOL);
     }
 
     mRequiredAttributes.set(filament::VertexAttribute::POSITION);
@@ -284,41 +357,77 @@ void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
     info.uib = ibb.name("MaterialParams").build();
 
     info.isLit = isLit();
-    info.isDoubleSided = mDoubleSided;
+    info.hasDoubleSidedCapability = mDoubleSidedCapability;
     info.hasExternalSamplers = hasExternalSampler();
+    info.specularAntiAliasing = mSpecularAntiAliasing;
+    info.clearCoatIorChange = mClearCoatIorChange;
+    info.flipUV = mFlipUV;
     info.requiredAttributes = mRequiredAttributes;
     info.blendingMode = mBlendingMode;
+    info.postLightingBlendingMode = mPostLightingBlendingMode;
     info.shading = mShading;
     info.hasShadowMultiplier = mShadowMultiplier;
-    info.samplerBindings.populate(&info.sib, mMaterialName.c_str());
+    info.multiBounceAO = mMultiBounceAO;
+    info.specularAO = mSpecularAO;
 }
 
 bool MaterialBuilder::runStaticCodeAnalysis() noexcept {
-    using namespace filament::driver;
+    using namespace filament::backend;
 
+#ifndef FILAMAT_LITE
     GLSLTools glslTools;
 
+    // Some fields in MaterialInputs only exist if the property is set (e.g: normal, subsurface
+    // for cloth shading model). Give our shader all properties. This will enable us to parse and
+    // static code analyse the AST.
+    MaterialBuilder::PropertyList allProperties;
+    std::fill_n(allProperties, MATERIAL_PROPERTIES_COUNT, true);
+    ShaderModel model;
+    std::string shaderCodeAllProperties = peek(ShaderType::FRAGMENT, model, allProperties);
+
     // Populate mProperties with the properties set in the shader.
-    if (!glslTools.findProperties(*this, mProperties, mTargetApi)) {
+    if (!glslTools.findProperties(shaderCodeAllProperties, mProperties, mTargetApi, model)) {
         return false;
     }
 
     // At this point the shader is syntactically correct. Perform semantic analysis now.
-    ShaderModel model;
 
     std::string shaderCode = peek(ShaderType::VERTEX, model, mProperties);
     bool result = glslTools.analyzeVertexShader(shaderCode, model, mTargetApi);
-    if (!result) return result;
+    if (!result) return false;
 
     shaderCode = peek(ShaderType::FRAGMENT, model, mProperties);
     result = glslTools.analyzeFragmentShader(shaderCode, model, mTargetApi);
     return result;
+#else
+    GLSLToolsLite glslTools;
+    return glslTools.findProperties(mMaterialCode, mProperties);
+#endif
+}
+
+bool MaterialBuilder::checkLiteRequirements() noexcept {
+#ifdef FILAMAT_LITE
+    if (mTargetApi != TargetApi::OPENGL) {
+        utils::slog.e
+                << "Filamat lite only supports building materials for the OpenGL backend."
+                << utils::io::endl;
+        return false;
+    }
+
+    if (mOptimization != Optimization::NONE) {
+        utils::slog.e
+                << "Filamat lite does not support material optimization." << utils::io::endl
+                << "Ensure optimization is set to NONE." << utils::io::endl;
+        return false;
+    }
+#endif
+    return true;
 }
 
 static void showErrorMessage(const char* materialName, uint8_t variant,
-        MaterialBuilder::TargetApi targetApi, filament::driver::ShaderType shaderType,
+        MaterialBuilder::TargetApi targetApi, filament::backend::ShaderType shaderType,
         const std::string& shaderCode) {
-    using ShaderType = filament::driver::ShaderType;
+    using ShaderType = filament::backend::ShaderType;
     using TargetApi = MaterialBuilder::TargetApi;
     utils::slog.e
             << "Error in \"" << materialName << "\""
@@ -331,111 +440,24 @@ static void showErrorMessage(const char* materialName, uint8_t variant,
             << shaderCode;
 }
 
-Package MaterialBuilder::build() noexcept {
-    GLSLTools::init();
-
-    if (!runStaticCodeAnalysis()) {
-        // Return an empty package to signal a failure to build the material.
-        Package package(0);
-        package.setValid(false);
-        return package;
-    }
-
-    bool errorOccured = false;
-
-    MaterialInfo info;
-    prepareToBuild(info);
-
+bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, ChunkContainer& container,
+        const MaterialInfo& info) const noexcept {
     // Create a postprocessor to optimize / compile to Spir-V if necessary.
+#ifndef FILAMAT_LITE
     GLSLPostProcessor postProcessor(mOptimization, mPrintShaders);
-
-    // Create chunk tree.
-    ChunkContainer container;
-
-    SimpleFieldChunk<uint32_t> matVersion(ChunkType::MaterialVersion, 1);
-    container.addChild(&matVersion);
-
-    SimpleFieldChunk<const char*> matName(ChunkType::MaterialName, mMaterialName.c_str_safe());
-    container.addChild(&matName);
-
-    SimpleFieldChunk<uint8_t> matShading(ChunkType::MaterialShading, static_cast<uint8_t>(mShading));
-    container.addChild(&matShading);
-
-    SimpleFieldChunk<uint8_t> matBlendingMode(ChunkType::MaterialBlendingMode,
-            static_cast<uint8_t>(mBlendingMode));
-    container.addChild(&matBlendingMode);
-
-    SimpleFieldChunk<float> matMaskThreshold(ChunkType::MaterialMaskThreshold, mMaskThreshold);
-    if (mBlendingMode == BlendingMode::MASKED) {
-        container.addChild(&matMaskThreshold);
-    }
-
-    SimpleFieldChunk<bool> matShadowMultiplier(ChunkType::MaterialShadowMultiplier, mShadowMultiplier);
-    if (mShading == Shading::UNLIT) {
-        container.addChild(&matShadowMultiplier);
-    }
-
-    SimpleFieldChunk<uint8_t> matTransparency(ChunkType::MaterialTransparencyMode,
-            static_cast<uint8_t>(mTransparencyMode));
-    container.addChild(&matTransparency);
-
-    SimpleFieldChunk<uint32_t> matRequiredAttributes(ChunkType::MaterialRequiredAttributes,
-            mRequiredAttributes.getValue());
-    container.addChild(&matRequiredAttributes);
-
-    // UIB
-    MaterialUniformInterfaceBlockChunk matUib = MaterialUniformInterfaceBlockChunk(info.uib);
-    container.addChild(&matUib);
-
-    // SIB
-    MaterialSamplerInterfaceBlockChunk matSib = MaterialSamplerInterfaceBlockChunk(info.sib);
-    container.addChild(&matSib);
-
-    MaterialSamplerBindingsChunk matSb = MaterialSamplerBindingsChunk(info.samplerBindings);
-    if (mTargetApi == TargetApi::VULKAN || mTargetApi == TargetApi::ALL) {
-        container.addChild(&matSb);
-    }
-
-    SimpleFieldChunk<bool> matDepthWriteSet(ChunkType::MaterialDepthWriteSet, mDepthWriteSet);
-    container.addChild(&matDepthWriteSet);
-
-    SimpleFieldChunk<bool> matDoubleSidedSet(ChunkType::MaterialDoubleSidedSet, mDoubleSidedSet);
-    container.addChild(&matDoubleSidedSet);
-
-    SimpleFieldChunk<bool> matDoubleSided(ChunkType::MaterialDoubleSided, mDoubleSided);
-    container.addChild(&matDoubleSided);
-
-    SimpleFieldChunk<bool> matColorWrite(ChunkType::MaterialColorWrite, mColorWrite);
-    container.addChild(&matColorWrite);
-
-    SimpleFieldChunk<bool> matDepthWrite(ChunkType::MaterialDepthWrite, mDepthWrite);
-    container.addChild(&matDepthWrite);
-
-    SimpleFieldChunk<bool> matDepthTest(ChunkType::MaterialDepthTest, mDepthTest);
-    container.addChild(&matDepthTest);
-
-    SimpleFieldChunk<uint8_t> matCullingMode(ChunkType::MaterialCullingMode,
-            static_cast<uint8_t>(mCullingMode));
-    container.addChild(&matCullingMode);
-
-    SimpleFieldChunk<uint8_t> matVertexDomain(ChunkType::MaterialVertexDomain,
-            static_cast<uint8_t>(mVertexDomain));
-    container.addChild(&matVertexDomain);
-
-    SimpleFieldChunk<uint8_t> matInterpolation(ChunkType::MaterialInterpolation,
-            static_cast<uint8_t>(mInterpolation));
-    container.addChild(&matInterpolation);
-
-    SimpleFieldChunk<uint32_t> matShaderModels(ChunkType::MaterialShaderModels,
-            mShaderModels.getValue());
-    container.addChild(&matShaderModels);
+#endif
 
     // Generate all shaders.
     std::vector<TextEntry> glslEntries;
     std::vector<SpirvEntry> spirvEntries;
+    std::vector<TextEntry> metalEntries;
     LineDictionary glslDictionary;
+#ifndef FILAMAT_LITE
     BlobDictionary spirvDictionary;
+    LineDictionary metalDictionary;
+#endif
     std::vector<uint32_t> spirv;
+    std::string msl;
 
     ShaderGenerator sg(mProperties, mVariables,
             mMaterialCode, mMaterialLineOffset, mMaterialVertexCode, mMaterialVertexLineOffset);
@@ -443,144 +465,155 @@ Package MaterialBuilder::build() noexcept {
     bool emptyVertexCode = mMaterialVertexCode.empty();
     bool customDepth = sg.hasCustomDepthShader() ||
             mBlendingMode == BlendingMode::MASKED || !emptyVertexCode;
-    SimpleFieldChunk<bool> hasCustomDepth(ChunkType::MaterialHasCustomDepthShader, customDepth);
-    container.addChild(&hasCustomDepth);
+    container.addSimpleChild<bool>(ChunkType::MaterialHasCustomDepthShader, customDepth);
 
     for (const auto& params : mCodeGenPermutations) {
         const ShaderModel shaderModel = ShaderModel(params.shaderModel);
         const TargetApi targetApi = params.targetApi;
-        const TargetApi codeGenTargetApi = params.codeGenTargetApi;
-        std::vector<uint32_t>* pSpirv = (targetApi == TargetApi::VULKAN) ? &spirv : nullptr;
+        const TargetLanguage targetLanguage = params.targetLanguage;
 
-        TextEntry glslEntry;
-        SpirvEntry spirvEntry;
+        // Metal Shading Language is cross-compiled from Vulkan.
+        const bool targetApiNeedsSpirv =
+                (targetApi == TargetApi::VULKAN || targetApi == TargetApi::METAL);
+        const bool targetApiNeedsMsl = targetApi == TargetApi::METAL;
+        std::vector<uint32_t>* pSpirv = targetApiNeedsSpirv ? &spirv : nullptr;
+        std::string* pMsl = targetApiNeedsMsl ? &msl : nullptr;
+
+        TextEntry glslEntry{0};
+        SpirvEntry spirvEntry{0};
+        TextEntry metalEntry{0};
 
         glslEntry.shaderModel = static_cast<uint8_t>(params.shaderModel);
         spirvEntry.shaderModel = static_cast<uint8_t>(params.shaderModel);
+        metalEntry.shaderModel = static_cast<uint8_t>(params.shaderModel);
 
-        // apply custom variants filters
-        uint8_t variantMask = ~mVariantFilter;
+        for (const auto& v : variants) {
+            glslEntry.variant = v.variant;
+            spirvEntry.variant = v.variant;
+            metalEntry.variant = v.variant;
 
-        for (uint8_t k = 0; k < filament::VARIANT_COUNT; k++) {
-
-            if (filament::Variant::isReserved(k)) {
-                continue;
-            }
-
-            glslEntry.variant = k;
-            spirvEntry.variant = k;
-
-            // Remove variants for unlit materials
-            uint8_t v = filament::Variant::filterVariant(
-                    k & variantMask, isLit() || mShadowMultiplier);
-
-            if (filament::Variant::filterVariantVertex(v) == k) {
-                // Vertex Shader
-                std::string vs = sg.createVertexProgram(
-                        shaderModel, targetApi, codeGenTargetApi, info, k,
+            // Generate raw shader code.
+            std::string shader;
+            if (v.stage == filament::backend::ShaderType::VERTEX) {
+                shader = sg.createVertexProgram(
+                        shaderModel, targetApi, targetLanguage, info, v.variant,
                         mInterpolation, mVertexDomain);
-
-                bool ok = postProcessor.process(vs, filament::driver::ShaderType::VERTEX,
-                        shaderModel, &vs, pSpirv);
-                if (!ok) {
-                    showErrorMessage(mMaterialName.c_str_safe(), k, targetApi,
-                            filament::driver::ShaderType::VERTEX, vs);
-                    errorOccured = true;
-                    break;
-                }
-
-                if (targetApi == TargetApi::OPENGL) {
-                    if (codeGenTargetApi == TargetApi::VULKAN) {
-                        sg.fixupExternalSamplers(shaderModel, vs, info);
-                    }
-
-                    glslEntry.stage = filament::driver::ShaderType::VERTEX;
-                    glslEntry.shaderSize = vs.size();
-                    glslEntry.shader = (char*) malloc(glslEntry.shaderSize + 1);
-                    strcpy(glslEntry.shader, vs.c_str());
-                    glslDictionary.addText(glslEntry.shader);
-                    glslEntries.push_back(glslEntry);
-                }
-
-                if (targetApi == TargetApi::VULKAN) {
-                    assert(spirv.size() > 0);
-                    spirvEntry.stage = filament::driver::ShaderType::VERTEX;
-                    spirvEntry.dictionaryIndex = spirvDictionary.addBlob(spirv);
-                    spirv.clear();
-                    spirvEntries.push_back(spirvEntry);
-                }
+            } else if (v.stage == filament::backend::ShaderType::FRAGMENT) {
+                shader = sg.createFragmentProgram(
+                        shaderModel, targetApi, targetLanguage, info, v.variant, mInterpolation);
             }
 
-            if (filament::Variant::filterVariantFragment(v) == k) {
-                // Fragment Shader
-                std::string fs = sg.createFragmentProgram(
-                        shaderModel, targetApi, codeGenTargetApi, info, k, mInterpolation);
-
-                bool ok = postProcessor.process(fs, filament::driver::ShaderType::FRAGMENT,
-                        shaderModel, &fs, pSpirv);
-                if (!ok) {
-                    showErrorMessage(mMaterialName.c_str_safe(), k, targetApi,
-                            filament::driver::ShaderType::FRAGMENT, fs);
-                    errorOccured = true;
-                    break;
-                }
-
-                if (targetApi == TargetApi::OPENGL) {
-                    if (codeGenTargetApi == TargetApi::VULKAN) {
-                        sg.fixupExternalSamplers(shaderModel, fs, info);
-                    }
-
-                    glslEntry.stage = filament::driver::ShaderType::FRAGMENT;
-                    glslEntry.shaderSize = fs.size();
-                    glslEntry.shader = (char*) malloc(glslEntry.shaderSize + 1);
-                    strcpy(glslEntry.shader, fs.c_str());
-                    glslDictionary.addText(glslEntry.shader);
-                    glslEntries.push_back(glslEntry);
-                }
-
-                if (targetApi == TargetApi::VULKAN) {
-                    assert(spirv.size() > 0);
-                    spirvEntry.stage = filament::driver::ShaderType::FRAGMENT;
-                    spirvEntry.dictionaryIndex = spirvDictionary.addBlob(spirv);
-                    spirv.clear();
-                    spirvEntries.push_back(spirvEntry);
-                }
+#ifndef FILAMAT_LITE
+            bool ok = postProcessor.process(shader, v.stage, shaderModel, &shader, pSpirv, pMsl);
+#else
+            bool ok = true;
+#endif
+            if (!ok) {
+                showErrorMessage(mMaterialName.c_str_safe(), v.variant, targetApi, v.stage, shader);
+                return false;
             }
+
+            if (targetApi == TargetApi::OPENGL) {
+                if (targetLanguage == TargetLanguage::SPIRV) {
+                    sg.fixupExternalSamplers(shaderModel, shader, info);
+                }
+
+                glslEntry.stage = v.stage;
+                glslEntry.shader = shader;
+                glslDictionary.addText(glslEntry.shader);
+                glslEntries.push_back(glslEntry);
+            }
+
+#ifndef FILAMAT_LITE
+            if (targetApi == TargetApi::VULKAN) {
+                assert(!spirv.empty());
+                spirvEntry.stage = v.stage;
+                spirvEntry.dictionaryIndex = spirvDictionary.addBlob(spirv);
+                spirv.clear();
+                spirvEntries.push_back(spirvEntry);
+            }
+            if (targetApi == TargetApi::METAL) {
+                assert(spirv.size() > 0);
+                assert(msl.length() > 0);
+                metalEntry.stage = v.stage;
+                metalEntry.shader = msl;
+                spirv.clear();
+                msl.clear();
+                metalDictionary.addText(metalEntry.shader);
+                metalEntries.push_back(metalEntry);
+            }
+#endif
         }
     }
 
     // Emit GLSL chunks (TextDictionaryReader and MaterialTextChunk).
-    filamat::DictionaryTextChunk dicGlslChunk(glslDictionary, ChunkType::DictionaryGlsl);
-    MaterialTextChunk glslChunk(glslEntries, glslDictionary, ChunkType::MaterialGlsl);
     if (!glslEntries.empty()) {
-        container.addChild(&dicGlslChunk);
-        container.addChild(&glslChunk);
+        container.addChild<filamat::DictionaryTextChunk>(glslDictionary, ChunkType::DictionaryGlsl);
+        container.addChild<MaterialTextChunk>(std::move(glslEntries), glslDictionary, ChunkType::MaterialGlsl);
     }
 
     // Emit SPIRV chunks (SpirvDictionaryReader and MaterialSpirvChunk).
-    filamat::DictionarySpirvChunk dicSpirvChunk(spirvDictionary);
-    MaterialSpirvChunk spirvChunk(spirvEntries);
+#ifndef FILAMAT_LITE
     if (!spirvEntries.empty()) {
-        container.addChild(&dicSpirvChunk);
-        container.addChild(&spirvChunk);
+        container.addChild<filamat::DictionarySpirvChunk>(std::move(spirvDictionary));
+        container.addChild<MaterialSpirvChunk>(std::move(spirvEntries));
     }
+
+    // Emit Metal chunks (MetalDictionaryReader and MaterialMetalChunk).
+    if (!metalEntries.empty()) {
+        container.addChild<filamat::DictionaryTextChunk>(metalDictionary, ChunkType::DictionaryMetal);
+        container.addChild<MaterialTextChunk>(std::move(metalEntries), metalDictionary, ChunkType::MaterialMetal);
+    }
+#endif
+
+    return true;
+}
+
+Package MaterialBuilder::build() noexcept {
+    if (materialBuilderClients == 0) {
+        utils::slog.e << "Error: MaterialBuilder::init() must be called before build()."
+            << utils::io::endl;
+        // Return an empty package to signal a failure to build the material.
+        Package package(0);
+        package.setValid(false);
+        return package;
+    }
+
+    if (!checkLiteRequirements() ||
+        !runStaticCodeAnalysis()) {
+        // Return an empty package to signal a failure to build the material.
+        Package package(0);
+        package.setValid(false);
+        return package;
+    }
+
+    MaterialInfo info;
+    prepareToBuild(info);
+
+    filament::SamplerBindingMap map;
+    map.populate(&info.sib, mMaterialName.c_str());
+    info.samplerBindings = std::move(map);
+
+    // Create chunk tree.
+    ChunkContainer container;
+    writeChunks(container, info);
+
+    // Generate all shaders and write the shader chunks.
+    auto variants = determineVariants(mVariantFilter, isLit(), mShadowMultiplier);
+    bool success = generateShaders(variants, container, info);
 
     // Flatten all chunks in the container into a Package.
     size_t packageSize = container.getSize();
     Package package(packageSize);
     Flattener f(package);
     container.flatten(f);
-    package.setValid(!errorOccured);
+    package.setValid(success);
 
-    // Free all shaders that were created earlier.
-    for (TextEntry entry : glslEntries) {
-        free(entry.shader);
-    }
     return package;
 }
 
-const std::string MaterialBuilder::peek(filament::driver::ShaderType type,
-        filament::driver::ShaderModel& model, const PropertyList& properties) noexcept {
+const std::string MaterialBuilder::peek(filament::backend::ShaderType type,
+        filament::backend::ShaderModel& model, const PropertyList& properties) noexcept {
 
     ShaderGenerator sg(properties, mVariables,
             mMaterialCode, mMaterialLineOffset, mMaterialVertexCode, mMaterialVertexLineOffset);
@@ -588,20 +621,61 @@ const std::string MaterialBuilder::peek(filament::driver::ShaderType type,
     MaterialInfo info;
     prepareToBuild(info);
 
+    filament::SamplerBindingMap map;
+    map.populate(&info.sib, mMaterialName.c_str());
+    info.samplerBindings = std::move(map);
+
     for (const auto& params : mCodeGenPermutations) {
         model = ShaderModel(params.shaderModel);
-        const TargetApi targetApi = params.targetApi;
-        const TargetApi codeGenTargetApi = params.codeGenTargetApi;
-        if (type == filament::driver::ShaderType::VERTEX) {
-            return sg.createVertexProgram(model, targetApi, codeGenTargetApi,
+        if (type == filament::backend::ShaderType::VERTEX) {
+            return sg.createVertexProgram(model, params.targetApi, params.targetLanguage,
                     info, 0, mInterpolation, mVertexDomain);
         } else {
-            return sg.createFragmentProgram(model, targetApi, codeGenTargetApi,
+            return sg.createFragmentProgram(model, params.targetApi, params.targetLanguage,
                     info, 0, mInterpolation);
         }
     }
 
     return std::string("");
+}
+
+void MaterialBuilder::writeChunks(ChunkContainer& container, MaterialInfo& info) const noexcept {
+    container.addSimpleChild<uint32_t>(ChunkType::MaterialVersion, filament::MATERIAL_VERSION);
+    container.addSimpleChild<const char*>(ChunkType::MaterialName, mMaterialName.c_str_safe());
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialShading, static_cast<uint8_t>(mShading));
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialBlendingMode, static_cast<uint8_t>(mBlendingMode));
+
+    if (mBlendingMode == BlendingMode::MASKED) {
+        container.addSimpleChild<float>(ChunkType::MaterialMaskThreshold, mMaskThreshold);
+    }
+
+    if (mShading == Shading::UNLIT) {
+        container.addSimpleChild<bool>(ChunkType::MaterialShadowMultiplier, mShadowMultiplier);
+    }
+
+    container.addSimpleChild<bool>(ChunkType::MaterialSpecularAntiAliasing, mSpecularAntiAliasing);
+    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingVariance, mSpecularAntiAliasingVariance);
+    container.addSimpleChild<float>(ChunkType::MaterialSpecularAntiAliasingThreshold, mSpecularAntiAliasingThreshold);
+    container.addSimpleChild<bool>(ChunkType::MaterialClearCoatIorChange, mClearCoatIorChange);
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialTransparencyMode, static_cast<uint8_t>(mTransparencyMode));
+    container.addSimpleChild<uint32_t>(ChunkType::MaterialRequiredAttributes, mRequiredAttributes.getValue());
+
+    // UIB
+    container.addChild<MaterialUniformInterfaceBlockChunk>(info.uib);
+
+    // SIB
+    container.addChild<MaterialSamplerInterfaceBlockChunk>(info.sib);
+
+    container.addSimpleChild<bool>(ChunkType::MaterialDepthWriteSet, mDepthWriteSet);
+    container.addSimpleChild<bool>(ChunkType::MaterialDoubleSidedSet, mDoubleSidedCapability);
+    container.addSimpleChild<bool>(ChunkType::MaterialDoubleSided, mDoubleSided);
+    container.addSimpleChild<bool>(ChunkType::MaterialColorWrite, mColorWrite);
+    container.addSimpleChild<bool>(ChunkType::MaterialDepthWrite, mDepthWrite);
+    container.addSimpleChild<bool>(ChunkType::MaterialDepthTest, mDepthTest);
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialCullingMode, static_cast<uint8_t>(mCullingMode));
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialVertexDomain, static_cast<uint8_t>(mVertexDomain));
+    container.addSimpleChild<uint8_t>(ChunkType::MaterialInterpolation, static_cast<uint8_t>(mInterpolation));
+    container.addSimpleChild<uint32_t>(ChunkType::MaterialShaderModels, mShaderModels.getValue());
 }
 
 } // namespace filamat

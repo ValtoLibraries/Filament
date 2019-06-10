@@ -33,7 +33,7 @@
 #include <getopt/getopt.h>
 
 using namespace filamesh;
-using namespace math;
+using namespace filament::math;
 using namespace utils;
 
 #include <assimp/Importer.hpp>
@@ -66,12 +66,12 @@ static ushort2 convertUV(float2 uv) {
 template<typename VECTOR, typename INDEX>
 static Box computeAABB(VECTOR const* positions, INDEX const* indices,
         size_t count, size_t stride) noexcept {
-    math::float3 bmin(std::numeric_limits<float>::max());
-    math::float3 bmax(std::numeric_limits<float>::lowest());
+    filament::math::float3 bmin(std::numeric_limits<float>::max());
+    filament::math::float3 bmax(std::numeric_limits<float>::lowest());
     for (size_t i = 0; i < count; ++i) {
         VECTOR const* p = reinterpret_cast<VECTOR const *>(
                 (char const*) positions + indices[i] * stride);
-        const math::float3 v(p->x, p->y, p->z);
+        const filament::math::float3 v(p->x, p->y, p->z);
         bmin = min(bmin, v);
         bmax = max(bmax, v);
     }
@@ -81,9 +81,14 @@ static Box computeAABB(VECTOR const* positions, INDEX const* indices,
 void preprocessNode(const aiScene* scene, const aiNode* node) {
     for (size_t i = 0; i < node->mNumMeshes; ++i) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-        if (!mesh->HasNormals() || !mesh->HasTextureCoords(0)) {
-            std::cerr << "The mesh must have texture coordinates" << std::endl;
-            exit(1);
+        if (!mesh->HasNormals()) {
+            std::cerr << "Error: mesh " << i <<  " does not have normals" << std::endl;
+            continue;
+        }
+        if (!mesh->HasTextureCoords(0)) {
+            std::cerr << "Warning: mesh " << i <<  " does not have texture coordinates"
+                    << std::endl;
+            continue;
         }
         const float3* uv0 = reinterpret_cast<const float3*>(mesh->mTextureCoords[0]);
         const float3* uv1 = reinterpret_cast<const float3*>(mesh->mTextureCoords[1]);
@@ -104,7 +109,7 @@ void preprocessNode(const aiScene* scene, const aiNode* node) {
             }
         }
     }
-    for (size_t i=0 ; i<node->mNumChildren ; ++i) {
+    for (size_t i = 0; i < node->mNumChildren; ++i) {
         preprocessNode(scene, node->mChildren[i]);
     }
 }
@@ -113,6 +118,9 @@ template<bool INTERLEAVED, bool SNORMUVS>
 void processNode(const aiScene* scene, const aiNode* node, std::vector<Part>& meshes) {
     for (size_t i = 0; i < node->mNumMeshes; ++i) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+        if (!mesh->HasNormals()) {
+            continue;
+        }
 
         const float3* vertices = reinterpret_cast<const float3*>(mesh->mVertices);
         const float3* tangents = reinterpret_cast<const float3*>(mesh->mTangents);
@@ -124,6 +132,9 @@ void processNode(const aiScene* scene, const aiNode* node, std::vector<Part>& me
 
         if (!mesh->HasVertexColors(0)) {
             colors = nullptr;
+        }
+        if (!mesh->HasTextureCoords(0)) {
+            uv0 = nullptr;
         }
         if (!mesh->HasTextureCoords(1)) {
             uv1 = nullptr;
@@ -148,13 +159,18 @@ void processNode(const aiScene* scene, const aiNode* node, std::vector<Part>& me
                 }
 
                 for (size_t j = 0; j < numVertices; j++) {
-                    quatf q = mat3f::packTangentFrame({tangents[j], bitangents[j], normals[j]});
+                    quatf q;
+                    if (uv0) {
+                        q = mat3f::packTangentFrame({tangents[j], bitangents[j], normals[j]});
+                    } else {
+                        q = quatf(0, 0, 0, 1);
+                    }
                     color = colors ? colors[j] : float4(1.0f);
                     Vertex vertex {
                         .position = half4(vertices[j], 1.0_h),
-                        .tangents = short4(math::packSnorm16(q.xyzw)),
+                        .tangents = short4(filament::math::packSnorm16(q.xyzw)),
                         .color = ubyte4(clamp(color, 0.0f, 1.0f) * 255.0f),
-                        .uv0 = convertUV<SNORMUVS>(uv0[j].xy),
+                        .uv0 = uv0 ? convertUV<SNORMUVS>(uv0[j].xy) : ushort2(0),
                     };
                     if (INTERLEAVED) {
                         g_mesh.vertices.emplace_back(vertex);
@@ -212,7 +228,7 @@ static void printUsage(const char* name) {
                     "    FILAMESH [options] <source mesh> <destination file>\n"
                     "\n"
                     "Supported mesh formats:\n"
-                    "    COLLADA, FBX, OBJ\n"
+                    "    COLLADA, FBX, OBJ, GLTF\n"
                     "\n"
                     "Input meshes must have texture coordinates.\n"
                     "\n"

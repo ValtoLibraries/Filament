@@ -3,7 +3,6 @@
 //------------------------------------------------------------------------------
 
 #ifndef TARGET_MOBILE
-#define IBL_SPECULAR_OCCLUSION
 #define IBL_OFF_SPECULAR_PEAK
 #endif
 
@@ -13,21 +12,6 @@
 #else
 #define SPHERICAL_HARMONICS_BANDS           3
 #endif
-
-// Diffuse reflectance
-#define IBL_IRRADIANCE_SPHERICAL_HARMONICS  0
-
-// Specular reflectance
-#define IBL_PREFILTERED_DFG_LUT             0
-
-#define IBL_IRRADIANCE                      IBL_IRRADIANCE_SPHERICAL_HARMONICS
-#define IBL_PREFILTERED_DFG                 IBL_PREFILTERED_DFG_LUT
-
-// Cloth DFG approximation
-#define CLOTH_DFG_ASHIKHMIN                 0
-#define CLOTH_DFG_CHARLIE                   1
-
-#define CLOTH_DFG                           CLOTH_DFG_CHARLIE
 
 // IBL integration algorithm
 #define IBL_INTEGRATION_PREFILTERED_CUBEMAP         0
@@ -53,75 +37,18 @@ vec3 decodeDataForIBL(const vec4 data) {
 // IBL prefiltered DFG term implementations
 //------------------------------------------------------------------------------
 
-vec2 PrefilteredDFG_LUT(float coord, float NoV) {
+vec3 PrefilteredDFG_LUT(float lod, float NoV) {
     // coord = sqrt(linear_roughness), which is the mapping used by cmgen.
-    return textureLod(light_iblDFG, vec2(NoV, coord), 0.0).rg;
+    return textureLod(light_iblDFG, vec2(NoV, lod), 0.0).rgb;
 }
-
-#if CLOTH_DFG == CLOTH_DFG_ASHIKHMIN
-/**
- * Analytical approximation of the pre-filtered DFG terms for the cloth shading
- * model. This approximation is based on the Ashikhmin distribution term and
- * the Neubelt visibility term. See brdf.fs for more details.
- */
-vec2 PrefilteredDFG_Cloth_Ashikhmin(float roughness, float NoV) {
-    const vec4 c0 = vec4(0.24,  0.93, 0.01, 0.20);
-    const vec4 c1 = vec4(2.00, -1.30, 0.40, 0.03);
-
-    float s = 1.0 - NoV;
-    float e = s - c0.y;
-    float g = c0.x * exp2(-(e * e) / (2.0 * c0.z)) + s * c0.w;
-    float n = roughness * c1.x + c1.y;
-    float r = max(1.0 - n * n, c1.z) * g;
-
-    return vec2(r, r * c1.w);
-}
-#endif
-
- #if CLOTH_DFG == CLOTH_DFG_CHARLIE
-/**
- * Analytical approximation of the pre-filtered DFG terms for the cloth shading
- * model. This approximation is based on the Estevez & Kulla distribution term
- * ("Charlie" sheen) and the Neubelt visibility term. See brdf.fs for more
- * details.
- */
-vec2 PrefilteredDFG_Cloth_Charlie(float roughness, float NoV) {
-    const vec3 c0 = vec3(0.95, 1250.0, 0.0095);
-    const vec4 c1 = vec4(0.04, 0.2, 0.3, 0.2);
-
-    float a = 1.0 - NoV;
-    float b = 1.0 - roughness;
-
-    float n = pow(c1.x + a, 64.0);
-    float e = b - c0.x;
-    float g = exp2(-(e * e) * c0.y);
-    float f = b + c1.y;
-    float a2 = a * a;
-    float a3 = a2 * a;
-    float c = n * g + c1.z * (a + c1.w) * roughness + f * f * a3 * a3 * a2;
-    float r = min(c, 18.0);
-
-    return vec2(r, r * c0.z);
-}
-#endif
 
 //------------------------------------------------------------------------------
 // IBL environment BRDF dispatch
 //------------------------------------------------------------------------------
 
-vec2 prefilteredDFG(float roughness, float NoV) {
-#if defined(SHADING_MODEL_CLOTH)
-    #if CLOTH_DFG == CLOTH_DFG_ASHIKHMIN
-        return PrefilteredDFG_Cloth_Ashikhmin(roughness, NoV);
-    #elif CLOTH_DFG == CLOTH_DFG_CHARLIE
-        return PrefilteredDFG_Cloth_Charlie(roughness, NoV);
-    #endif
-#else
-    #if IBL_PREFILTERED_DFG == IBL_PREFILTERED_DFG_LUT
-        // PrefilteredDFG_LUT() takes a coordinate, which is sqrt(linear_roughness) = roughness
-        return PrefilteredDFG_LUT(roughness, NoV);
-    #endif
-#endif
+vec3 prefilteredDFG(float perceptualRoughness, float NoV) {
+    // PrefilteredDFG_LUT() takes a LOD, which is sqrt(roughness) = perceptualRoughness
+    return PrefilteredDFG_LUT(perceptualRoughness, NoV);
 }
 
 //------------------------------------------------------------------------------
@@ -151,39 +78,39 @@ vec3 Irradiance_SphericalHarmonics(const vec3 n) {
 //------------------------------------------------------------------------------
 
 vec3 diffuseIrradiance(const vec3 n) {
-#if IBL_IRRADIANCE == IBL_IRRADIANCE_SPHERICAL_HARMONICS
     return Irradiance_SphericalHarmonics(n);
-#endif
 }
 
 //------------------------------------------------------------------------------
 // IBL specular
 //------------------------------------------------------------------------------
 
-vec3 specularIrradiance(const vec3 r, float roughness) {
-    // lod = lod_count * sqrt(linear_roughness), which is the mapping used by cmgen
-    // where linear_roughness = roughness^2
+vec3 prefilteredRadiance(const vec3 r, float perceptualRoughness) {
+    // lod = lod_count * sqrt(roughness), which is the mapping used by cmgen
+    // where roughness = perceptualRoughness^2
     // using all the mip levels requires seamless cubemap sampling
-    float lod = IBL_MAX_MIP_LEVEL * roughness;
+    float lod = IBL_MAX_MIP_LEVEL * perceptualRoughness;
     return decodeDataForIBL(textureLod(light_iblSpecular, r, lod));
 }
 
-vec3 specularIrradiance(const vec3 r, float roughness, float offset) {
-    float lod = IBL_MAX_MIP_LEVEL * roughness * roughness;
+vec3 prefilteredRadiance(const vec3 r, float roughness, float offset) {
+    float lod = IBL_MAX_MIP_LEVEL * roughness;
     return decodeDataForIBL(textureLod(light_iblSpecular, r, lod + offset));
 }
 
-vec3 getSpecularDominantDirection(vec3 n, vec3 r, float linearRoughness) {
+vec3 getSpecularDominantDirection(vec3 n, vec3 r, float roughness) {
 #if defined(IBL_OFF_SPECULAR_PEAK)
-    float s = 1.0 - linearRoughness;
-    return mix(n, r, s * (sqrt(s) + linearRoughness));
+    float s = 1.0 - roughness;
+    return mix(n, r, s * (sqrt(s) + roughness));
 #else
     return r;
 #endif
 }
 
 vec3 specularDFG(const PixelParams pixel) {
-#if defined(SHADING_MODEL_CLOTH) || !defined(USE_MULTIPLE_SCATTERING_COMPENSATION)
+#if defined(SHADING_MODEL_CLOTH)
+    return pixel.f0 * pixel.dfg.z;
+#elif !defined(USE_MULTIPLE_SCATTERING_COMPENSATION)
     return pixel.f0 * pixel.dfg.x + pixel.dfg.y;
 #else
     return mix(pixel.dfg.xxx, pixel.dfg.yyy, pixel.f0);
@@ -204,7 +131,7 @@ vec3 getReflectedVector(const PixelParams pixel, const vec3 v, const vec3 n) {
     vec3  anisotropyDirection = pixel.anisotropy >= 0.0 ? pixel.anisotropicB : pixel.anisotropicT;
     vec3  anisotropicTangent  = cross(anisotropyDirection, v);
     vec3  anisotropicNormal   = cross(anisotropicTangent, anisotropyDirection);
-    float bendFactor          = abs(pixel.anisotropy) * saturate(5.0 * pixel.roughness);
+    float bendFactor          = abs(pixel.anisotropy) * saturate(5.0 * pixel.perceptualRoughness);
     vec3  bentNormal          = normalize(mix(n, anisotropicNormal, bendFactor));
 
     vec3 r = reflect(-v, bentNormal);
@@ -220,7 +147,7 @@ vec3 getReflectedVector(const PixelParams pixel, const vec3 n) {
 #else
     vec3 r = shading_reflected;
 #endif
-    return getSpecularDominantDirection(n, r, pixel.linearRoughness);
+    return getSpecularDominantDirection(n, r, pixel.roughness);
 }
 
 //------------------------------------------------------------------------------
@@ -228,7 +155,6 @@ vec3 getReflectedVector(const PixelParams pixel, const vec3 n) {
 //------------------------------------------------------------------------------
 
 #if IBL_INTEGRATION == IBL_INTEGRATION_IMPORTANCE_SAMPLING
-
 vec2 hammersley(uint index) {
     // Compute Hammersley sequence
     // TODO: these should come from uniforms
@@ -246,9 +172,9 @@ vec2 hammersley(uint index) {
     return vec2(float(i), float(bits)) * invNumSamples;
 }
 
-vec3 importanceSamplingNdfDggx(vec2 u, float linearRoughness) {
+vec3 importanceSamplingNdfDggx(vec2 u, float roughness) {
     // Importance sampling D_GGX
-    float a2 = linearRoughness * linearRoughness;
+    float a2 = roughness * roughness;
     float phi = 2.0 * PI * u.x;
     float cosTheta2 = (1.0 - u.y) / (1.0 + (a2 - 1.0) * u.y);
     float cosTheta = sqrt(cosTheta2);
@@ -256,9 +182,9 @@ vec3 importanceSamplingNdfDggx(vec2 u, float linearRoughness) {
     return vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 }
 
-vec3 importanceSamplingVNdfDggx(vec2 u, float linearRoughness, vec3 v) {
+vec3 importanceSamplingVNdfDggx(vec2 u, float roughness, vec3 v) {
     // See: "A Simpler and Exact Sampling Routine for the GGX Distribution of Visible Normals", Eric Heitz
-    float alpha = linearRoughness;
+    float alpha = roughness;
 
     // stretch view
     v = normalize(vec3(alpha * v.x, alpha * v.y, v.z));
@@ -306,8 +232,8 @@ vec3 isEvaluateIBL(const PixelParams pixel, vec3 n, vec3 v, float NoV) {
     tangentToWorld[1] = cross(n, tangentToWorld[0]);
     tangentToWorld[2] = n;
 
-    float linearRoughness = pixel.linearRoughness;
-    float a2 = linearRoughness * linearRoughness;
+    float roughness = pixel.roughness;
+    float a2 = roughness * roughness;
 
     const uint numSamples = uint(IBL_INTEGRATION_IMPORTANCE_SAMPLING_COUNT);
     const float invNumSamples = 1.0 / float(numSamples);
@@ -315,7 +241,7 @@ vec3 isEvaluateIBL(const PixelParams pixel, vec3 n, vec3 v, float NoV) {
     vec3 indirectSpecular = vec3(0.0);
     for (uint i = 0u; i < numSamples; i++) {
         vec2 u = hammersley(i);
-        vec3 h = tangentToWorld * importanceSamplingNdfDggx(u, linearRoughness);
+        vec3 h = tangentToWorld * importanceSamplingNdfDggx(u, roughness);
 
         // Since anisotropy doesn't work with prefiltering, we use the same "faux" anisotropy
         // we do when we use the prefiltered cubemap
@@ -328,15 +254,15 @@ vec3 isEvaluateIBL(const PixelParams pixel, vec3 n, vec3 v, float NoV) {
             float LoH = max(dot(l, h), 0.0);
 
             // PDF inverse (we must use D_GGX() here, which is used to generate samples)
-            float ipdf = (4.0 * LoH) / (D_GGX(linearRoughness, NoH, h) * NoH);
+            float ipdf = (4.0 * LoH) / (D_GGX(roughness, NoH, h) * NoH);
 
             float mipLevel = prefilteredImportanceSampling(ipdf);
 
             // we use texture() instead of textureLod() to take advantage of mipmapping
             vec3 L = decodeDataForIBL(texture(light_iblSpecular, l, mipLevel));
 
-            float D = distribution(linearRoughness, NoH, h);
-            float V = visibility(pixel.roughness, linearRoughness, NoV, NoL, LoH);
+            float D = distribution(roughness, NoH, h);
+            float V = visibility(roughness, NoV, NoL, LoH);
             vec3  F = fresnel(pixel.f0, LoH);
             vec3 Fr = F * (D * V * NoL * ipdf * invNumSamples);
 
@@ -351,7 +277,7 @@ void isEvaluateClearCoatIBL(const PixelParams pixel, float specularAO, inout vec
 #if defined(MATERIAL_HAS_CLEAR_COAT)
 #if defined(MATERIAL_HAS_NORMAL) || defined(MATERIAL_HAS_CLEAR_COAT_NORMAL)
     // We want to use the geometric normal for the clear coat layer
-    float clearCoatNoV = abs(dot(shading_clearCoatNormal, shading_view)) + FLT_EPS;
+    float clearCoatNoV = clampNoV(dot(shading_clearCoatNormal, shading_view));
     vec3 clearCoatNormal = shading_clearCoatNormal;
 #else
     float clearCoatNoV = shading_NoV;
@@ -364,9 +290,9 @@ void isEvaluateClearCoatIBL(const PixelParams pixel, float specularAO, inout vec
     Fr *= sq(attenuation);
 
     PixelParams p;
-    p.roughness = pixel.clearCoatRoughness;
+    p.perceptualRoughness = pixel.clearCoatPerceptualRoughness;
     p.f0 = vec3(0.04);
-    p.linearRoughness = p.roughness * p.roughness;
+    p.roughness = perceptualRoughnessToRoughness(p.perceptualRoughness);
     p.anisotropy = 0.0;
 
     vec3 clearCoatLobe = isEvaluateIBL(p, clearCoatNormal, shading_view, clearCoatNoV);
@@ -378,17 +304,6 @@ void isEvaluateClearCoatIBL(const PixelParams pixel, float specularAO, inout vec
 //------------------------------------------------------------------------------
 // IBL evaluation
 //------------------------------------------------------------------------------
-
-/**
- * Computes a specular occlusion term from the ambient occlusion term.
- */
-float computeSpecularAO(float NoV, float ao, float roughness) {
-#if defined(IBL_SPECULAR_OCCLUSION) && defined(MATERIAL_HAS_AMBIENT_OCCLUSION)
-    return saturate(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao);
-#else
-    return 1.0;
-#endif
-}
 
 void evaluateClothIndirectDiffuseBRDF(const PixelParams pixel, inout float diffuse) {
 #if defined(SHADING_MODEL_CLOTH)
@@ -403,7 +318,7 @@ void evaluateClearCoatIBL(const PixelParams pixel, float specularAO, inout vec3 
 #if defined(MATERIAL_HAS_CLEAR_COAT)
 #if defined(MATERIAL_HAS_NORMAL) || defined(MATERIAL_HAS_CLEAR_COAT_NORMAL)
     // We want to use the geometric normal for the clear coat layer
-    float clearCoatNoV = abs(dot(shading_clearCoatNormal, shading_view)) + FLT_EPS;
+    float clearCoatNoV = clampNoV(dot(shading_clearCoatNormal, shading_view));
     vec3 clearCoatR = reflect(-shading_view, shading_clearCoatNormal);
 #else
     float clearCoatNoV = shading_NoV;
@@ -413,7 +328,7 @@ void evaluateClearCoatIBL(const PixelParams pixel, float specularAO, inout vec3 
     float Fc = F_Schlick(0.04, 1.0, clearCoatNoV) * pixel.clearCoat;
     float attenuation = 1.0 - Fc;
     Fr *= sq(attenuation);
-    Fr += specularIrradiance(clearCoatR, pixel.clearCoatRoughness) * (specularAO * Fc);
+    Fr += prefilteredRadiance(clearCoatR, pixel.clearCoatPerceptualRoughness) * (specularAO * Fc);
     Fd *= attenuation;
 #endif
 }
@@ -422,7 +337,7 @@ void evaluateSubsurfaceIBL(const PixelParams pixel, const vec3 diffuseIrradiance
         inout vec3 Fd, inout vec3 Fr) {
 #if defined(SHADING_MODEL_SUBSURFACE)
     vec3 viewIndependent = diffuseIrradiance;
-    vec3 viewDependent = specularIrradiance(-shading_view, pixel.roughness, 1.0 + pixel.thickness);
+    vec3 viewDependent = prefilteredRadiance(-shading_view, pixel.roughness, 1.0 + pixel.thickness);
     float attenuation = (1.0 - pixel.thickness) / (2.0 * PI);
     Fd += pixel.subsurfaceColor * (viewIndependent + viewDependent) * attenuation;
 #elif defined(SHADING_MODEL_CLOTH) && defined(MATERIAL_HAS_SUBSURFACE_COLOR)
@@ -435,11 +350,12 @@ void evaluateIBL(const MaterialInputs material, const PixelParams pixel, inout v
     vec3 n = shading_normal;
     vec3 r = getReflectedVector(pixel, n);
 
-    float ao = material.ambientOcclusion;
-    float specularAO = computeSpecularAO(shading_NoV, ao, pixel.roughness);
+    float ssao = evaluateSSAO();
+    float diffuseAO = min(material.ambientOcclusion, ssao);
+    float specularAO = computeSpecularAO(shading_NoV, diffuseAO, pixel.roughness);
 
     // diffuse indirect
-    float diffuseBRDF = ao; // Fd_Lambert() is baked in the SH below
+    float diffuseBRDF = singleBounceAO(diffuseAO);// Fd_Lambert() is baked in the SH below
     evaluateClothIndirectDiffuseBRDF(pixel, diffuseBRDF);
 
     vec3 diffuseIrradiance = diffuseIrradiance(n);
@@ -448,15 +364,18 @@ void evaluateIBL(const MaterialInputs material, const PixelParams pixel, inout v
     // specular indirect
     vec3 Fr;
 #if IBL_INTEGRATION == IBL_INTEGRATION_PREFILTERED_CUBEMAP
-    Fr = specularDFG(pixel) * specularIrradiance(r, pixel.roughness);
-    Fr *= specularAO * pixel.energyCompensation;
+    Fr = specularDFG(pixel) * prefilteredRadiance(r, pixel.perceptualRoughness);
+    Fr *= singleBounceAO(specularAO) * pixel.energyCompensation;
     evaluateClearCoatIBL(pixel, specularAO, Fd, Fr);
 #elif IBL_INTEGRATION == IBL_INTEGRATION_IMPORTANCE_SAMPLING
     Fr = isEvaluateIBL(pixel, shading_normal, shading_view, shading_NoV);
-    Fr *= specularAO * pixel.energyCompensation;
+    Fr *= singleBounceAO(specularAO) * pixel.energyCompensation;
     isEvaluateClearCoatIBL(pixel, specularAO, Fd, Fr);
 #endif
     evaluateSubsurfaceIBL(pixel, diffuseIrradiance, Fd, Fr);
+
+    multiBounceAO(diffuseAO, pixel.diffuseColor, Fd);
+    multiBounceSpecularAO(specularAO, pixel.f0, Fr);
 
     // Note: iblLuminance is already premultiplied by the exposure
     color.rgb += (Fd + Fr) * frameUniforms.iblLuminance;

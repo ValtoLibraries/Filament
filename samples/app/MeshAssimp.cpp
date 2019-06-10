@@ -27,7 +27,9 @@
 
 #include "MeshAssimp.h"
 
+#include <stdlib.h>
 #include <string.h>
+
 #include <array>
 
 #include <filament/Color.h>
@@ -52,14 +54,13 @@
 
 #include <stb_image.h>
 
-#include <stdlib.h>
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include "generated/resources/resources.h"
 
 using namespace filament;
 using namespace filamat;
-using namespace math;
+using namespace filament::math;
 using namespace utils;
 
 enum class AlphaMode : uint8_t {
@@ -71,7 +72,7 @@ enum class AlphaMode : uint8_t {
 struct MaterialConfig {
     bool doubleSided = false;
     bool unlit = false;
-    bool hasVertexColors;
+    bool hasVertexColors = false;
     AlphaMode alphaMode = AlphaMode::OPAQUE;
     float maskThreshold = 0.5f;
     uint8_t baseColorUV = 0;
@@ -92,7 +93,7 @@ void appendBooleanToBitMask(uint64_t &bitmask, bool b) {
 
 uint64_t hashMaterialConfig(MaterialConfig config) {
     uint64_t bitmask = 0;
-    memcpy(&config.maskThreshold, &bitmask, sizeof(config.maskThreshold));
+    memcpy(&bitmask, &config.maskThreshold, sizeof(config.maskThreshold));
     appendBooleanToBitMask(bitmask, config.doubleSided);
     appendBooleanToBitMask(bitmask, config.unlit);
     appendBooleanToBitMask(bitmask, config.hasVertexColors);
@@ -128,7 +129,7 @@ std::string shaderFromConfig(MaterialConfig config) {
     shader += R"SHADER(
         prepareMaterial(material);
         material.baseColor = texture(materialParams_baseColorMap, baseColorUV);
-        material.baseColor.rgb *= materialParams.baseColorFactor.xyz;
+        material.baseColor *= materialParams.baseColorFactor;
     )SHADER";
 
     if (config.alphaMode == AlphaMode::TRANSPARENT) {
@@ -139,11 +140,16 @@ std::string shaderFromConfig(MaterialConfig config) {
 
     if (!config.unlit) {
         shader += R"SHADER(
-            material.roughness = materialParams.roughnessFactor * texture(materialParams_metallicRoughnessMap, metallicRoughnessUV).g;
-            material.metallic = materialParams.metallicFactor * texture(materialParams_metallicRoughnessMap, metallicRoughnessUV).b;
+            vec4 metallicRoughness = texture(materialParams_metallicRoughnessMap, metallicRoughnessUV);
+            material.roughness = materialParams.roughnessFactor * metallicRoughness.g;
+            material.metallic = materialParams.metallicFactor * metallicRoughness.b;
             material.ambientOcclusion = texture(materialParams_aoMap, aoUV).r;
-            material.emissive = texture(materialParams_emissiveMap, emissiveUV);
+            material.emissive.rgb = texture(materialParams_emissiveMap, emissiveUV).rgb;
             material.emissive.rgb *= materialParams.emissiveFactor.rgb;
+
+            // The opinionated lighting model specified by glTF does not account for energy
+            // compensation, using this value basically disables it:
+            material.emissive.a = 3.0;
         )SHADER";
     }
 
@@ -153,6 +159,7 @@ std::string shaderFromConfig(MaterialConfig config) {
 
 Material* createMaterialFromConfig(Engine& engine, MaterialConfig config ) {
     std::string shader = shaderFromConfig(config);
+    MaterialBuilder::init();
     MaterialBuilder builder = MaterialBuilder()
             .name("material")
             .material(shader.c_str())
@@ -197,14 +204,14 @@ Texture* MeshAssimp::createOneByOneTexture(uint32_t pixel) {
             .width(uint32_t(1))
             .height(uint32_t(1))
             .levels(0xff)
-            .format(driver::TextureFormat::RGBA8)
+            .format(Texture::InternalFormat::RGBA8)
             .build(mEngine);
 
     Texture::PixelBufferDescriptor defaultNormalBuffer(textureData,
             size_t(1 * 1 * 4),
             Texture::Format::RGBA,
             Texture::Type::UBYTE,
-            (driver::BufferDescriptor::Callback) &free);
+            (Texture::PixelBufferDescriptor::Callback) &free);
 
     texturePtr->setImage(mEngine, 0, std::move(defaultNormalBuffer));
     texturePtr->generateMipmaps(mEngine);
@@ -212,7 +219,8 @@ Texture* MeshAssimp::createOneByOneTexture(uint32_t pixel) {
     return texturePtr;
 }
 
-void getMinMaxUV(const aiScene *scene, const aiNode* node, float2 &minUV, float2 &maxUV, int uvIndex) {
+void getMinMaxUV(const aiScene *scene, const aiNode* node, float2 &minUV,
+        float2 &maxUV, uint32_t uvIndex) {
     for (size_t i = 0; i < node->mNumMeshes; ++i) {
         const aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
         if (!mesh->HasTextureCoords(uvIndex)) {
@@ -316,11 +324,11 @@ static void loadTexture(Engine *engine, const std::string &filePath, Texture **m
             int w, h, n;
             int numChannels = hasAlpha ? 4 : 3;
 
-            driver::TextureFormat inputFormat;
+            Texture::InternalFormat inputFormat;
             if (sRGB) {
-                inputFormat = hasAlpha ? driver::TextureFormat::SRGB8_A8 : driver::TextureFormat::SRGB8;
+                inputFormat = hasAlpha ? Texture::InternalFormat::SRGB8_A8 : Texture::InternalFormat::SRGB8;
             } else {
-                inputFormat = hasAlpha ? driver::TextureFormat::RGBA8 : driver::TextureFormat::RGB8;
+                inputFormat = hasAlpha ? Texture::InternalFormat::RGBA8 : Texture::InternalFormat::RGB8;
             }
 
             Texture::Format outputFormat = hasAlpha ? Texture::Format::RGBA : Texture::Format::RGB;
@@ -338,7 +346,7 @@ static void loadTexture(Engine *engine, const std::string &filePath, Texture **m
                         size_t(w * h * numChannels),
                         outputFormat,
                         Texture::Type::UBYTE,
-                        (driver::BufferDescriptor::Callback) &stbi_image_free);
+                        (Texture::PixelBufferDescriptor::Callback) &stbi_image_free);
 
                 (*map)->setImage(*engine, 0, std::move(buffer));
                 (*map)->generateMipmaps(*engine);
@@ -357,11 +365,11 @@ void loadEmbeddedTexture(Engine *engine, aiTexture *embeddedTexture, Texture **m
     int w, h, n;
     int numChannels = hasAlpha ? 4 : 3;
 
-    driver::TextureFormat inputFormat;
+    Texture::InternalFormat inputFormat;
     if (sRGB) {
-        inputFormat = hasAlpha ? driver::TextureFormat::SRGB8_A8 : driver::TextureFormat::SRGB8;
+        inputFormat = hasAlpha ? Texture::InternalFormat::SRGB8_A8 : Texture::InternalFormat::SRGB8;
     } else {
-        inputFormat = hasAlpha ? driver::TextureFormat::RGBA8 : driver::TextureFormat::RGB8;
+        inputFormat = hasAlpha ? Texture::InternalFormat::RGBA8 : Texture::InternalFormat::RGB8;
     }
 
     Texture::Format outputFormat = hasAlpha ? Texture::Format::RGBA : Texture::Format::RGB;
@@ -380,7 +388,7 @@ void loadEmbeddedTexture(Engine *engine, aiTexture *embeddedTexture, Texture **m
             size_t(w * h * numChannels),
             outputFormat,
             Texture::Type::UBYTE,
-            (driver::BufferDescriptor::Callback) &free);
+            (Texture::PixelBufferDescriptor::Callback) &free);
 
     (*map)->setImage(*engine, 0, std::move(defaultBuffer));
     (*map)->generateMipmaps(*engine);
@@ -396,7 +404,7 @@ int32_t getEmbeddedTextureId(const aiString& path) {
                 return -1;
             }
         }
-        return std::atoi(pathStr + 1);
+        return std::atoi(pathStr + 1); // NOLINT
     }
     return -1;
 }
@@ -481,12 +489,12 @@ template<typename VECTOR, typename INDEX>
 Box computeTransformedAABB(VECTOR const* vertices, INDEX const* indices, size_t count,
         const mat4f& transform) noexcept {
     size_t stride = sizeof(VECTOR);
-    math::float3 bmin(std::numeric_limits<float>::max());
-    math::float3 bmax(std::numeric_limits<float>::lowest());
+    filament::math::float3 bmin(std::numeric_limits<float>::max());
+    filament::math::float3 bmax(std::numeric_limits<float>::lowest());
     for (size_t i = 0; i < count; ++i) {
         VECTOR const* p = reinterpret_cast<VECTOR const*>(
                 (char const*) vertices + indices[i] * stride);
-        const math::float3 v(p->x, p->y, p->z);
+        const filament::math::float3 v(p->x, p->y, p->z);
         float3 tv = (transform * float4(v, 1.0f)).xyz;
         bmin = min(bmin, tv);
         bmax = max(bmax, tv);
@@ -623,7 +631,6 @@ void MeshAssimp::addFromFile(const Path& path,
 using Assimp::Importer;
 
 bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstance*>& outMaterials) {
-
     Importer importer;
     importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE,
             aiPrimitiveType_LINE | aiPrimitiveType_POINT);
@@ -646,7 +653,6 @@ bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstanc
             // we only support triangles
             aiProcess_Triangulate);
 
-    scene = importer.ApplyPostProcessing(aiProcess_CalcTangentSpace);
     size_t index = importer.GetImporterIndex(asset.file.getExtension().c_str());
     const aiImporterDesc* importerDesc = importer.GetImporterInfo(index);
     bool isGLTF = importerDesc &&
@@ -682,11 +688,11 @@ bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstanc
         }
     };
 
-    size_t deep = 0;
-    size_t depth = 0;
-    size_t matCount = 0;
-
     if (scene) {
+        size_t deep = 0;
+        size_t depth = 0;
+        size_t matCount = 0;
+
         aiNode const* node = scene->mRootNode;
 
         size_t totalVertexCount = 0;
@@ -709,7 +715,7 @@ bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstanc
 
         asset.snormUV0 = minUV0.x >= -1.0f && minUV0.x <= 1.0f && maxUV0.x >= -1.0f && maxUV0.x <= 1.0f &&
                          minUV0.y >= -1.0f && minUV0.y <= 1.0f && maxUV0.y >= -1.0f && maxUV0.y <= 1.0f;
-        
+
         asset.snormUV1 = minUV1.x >= -1.0f && minUV1.x <= 1.0f && maxUV1.x >= -1.0f && maxUV1.x <= 1.0f &&
                          minUV1.y >= -1.0f && minUV1.y <= 1.0f && maxUV1.y >= -1.0f && maxUV1.y <= 1.0f;
 
@@ -730,9 +736,6 @@ bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstanc
                                         scene, isGLTF, deep, matCount, node, -1, depth);
             }
         }
-
-
-        std::cout << "Hierarchy depth = " << depth << std::endl;
 
         // compute the aabb and find bounding box of entire model
         for (auto& mesh : asset.meshes) {
@@ -780,6 +783,7 @@ bool MeshAssimp::setFromFile(Asset& asset, std::map<std::string, MaterialInstanc
                 }
             }
         }
+
         return true;
     }
     return false;
@@ -841,15 +845,11 @@ void MeshAssimp::processNode(Asset& asset,
                             bitangent = normalize(cross(normal, float3{1.0, 0.0, 0.0}));
                             tangent = normalize(cross(normal, bitangent));
                         } else {
-                            // In assimp, the CalcTangentsProcess algorithm generates tangents in
-                            // the +U direction and bitangents in the +V direction, but the glTF
-                            // conformance suite (see NormalTangentTest) reveals that bitangents
-                            // should be flipped.
                             tangent = tangents[j];
-                            bitangent = -bitangents[j];
+                            bitangent = bitangents[j];
                         }
 
-                        quatf q = math::details::TMat33<float>::packTangentFrame({tangent, bitangent, normal});
+                        quatf q = filament::math::details::TMat33<float>::packTangentFrame({tangent, bitangent, normal});
                         asset.tangents.push_back(packSnorm16(q.xyzw));
                         asset.texCoords0.emplace_back(convertUV<SNORMUV0>(texCoord0));
                         asset.texCoords1.emplace_back(convertUV<SNORMUV1>(texCoord1));
@@ -969,7 +969,7 @@ void MeshAssimp::processGLTFMaterial(const aiScene* scene, const aiMaterial* mat
     aiTextureMapMode mapMode[3];
     MaterialConfig matConfig;
 
-    material->Get("$mat.twosided", 0, 0, matConfig.doubleSided);
+    material->Get(AI_MATKEY_TWOSIDED, matConfig.doubleSided);
     material->Get(AI_MATKEY_GLTF_UNLIT, matConfig.unlit);
 
     aiString alphaMode;

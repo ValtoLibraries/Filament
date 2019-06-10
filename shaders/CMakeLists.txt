@@ -11,13 +11,14 @@ endif()
 # Sources and headers
 # ==================================================================================================
 set(SHADERS
+        src/ambient_occlusion.fs
         src/brdf.fs
         src/common_getters.fs
         src/common_graphics.fs
         src/common_lighting.fs
         src/common_material.fs
-        src/common_material.vs
         src/common_math.fs
+        src/common_shading.fs
         src/common_types.fs
         src/conversion_functions.fs
         src/depth_main.fs
@@ -26,11 +27,15 @@ set(SHADERS
         src/fxaa.fs
         src/getters.fs
         src/getters.vs
+        src/inputs.fs
+        src/inputs.vs
         src/light_directional.fs
         src/light_indirect.fs
         src/light_punctual.fs
         src/main.fs
         src/main.vs
+        src/material_inputs.fs
+        src/material_inputs.vs
         src/post_process.fs
         src/post_process.vs
         src/shading_lit.fs
@@ -41,9 +46,29 @@ set(SHADERS
         src/shading_unlit.fs
         src/shadowing.fs
         src/shadowing.vs
-        src/tone_mapping.fs
-        src/variables.fs
-        src/variables.vs)
+        src/tone_mapping.fs)
+
+set(MINIFIED_DIR ${CMAKE_CURRENT_BINARY_DIR}/minified)
+
+file(MAKE_DIRECTORY ${MINIFIED_DIR})
+
+# After the foreach loop, SHADERS_MIN will contain the paths to the minified shaders.
+set(SHADERS_MIN)
+foreach(SHADER_FILE ${SHADERS})
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME)
+    set(SHADER_RAW ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE})
+    set(SHADER_MIN ${MINIFIED_DIR}/${SHADER_NAME})
+    # For Debug builds, pass the "-Onone" flag to perform no minification. This is helpful for
+    # debugging shaders.
+    add_custom_command(
+        OUTPUT ${SHADER_MIN}
+        COMMAND glslminifier "$<$<CONFIG:DEBUG>:-Onone>" -o ${SHADER_MIN} ${SHADER_RAW}
+        DEPENDS glslminifier ${SHADER_RAW}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Minifying shader ${SHADER_NAME}"
+    )
+    list(APPEND SHADERS_MIN ${SHADER_MIN})
+endforeach()
 
 # ==================================================================================================
 # Code generation
@@ -54,9 +79,9 @@ get_resgen_vars(${RESOURCE_DIR} shaders)
 
 add_custom_command(
         OUTPUT ${RESGEN_OUTPUTS}
-        COMMAND resgen --text --keep ${RESGEN_FLAGS} ${SHADERS}
-        DEPENDS resgen ${SHADERS}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND resgen --text --keep ${RESGEN_FLAGS} ${SHADERS_MIN}
+        DEPENDS resgen ${SHADERS_MIN}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         COMMENT "Aggregating shaders"
 )
 
@@ -69,3 +94,9 @@ endif()
 # ==================================================================================================
 add_library(${TARGET} STATIC ${RESGEN_SOURCE})
 target_include_directories(${TARGET} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+
+# ==================================================================================================
+# Installation
+# ==================================================================================================
+
+install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})

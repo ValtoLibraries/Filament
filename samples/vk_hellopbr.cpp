@@ -29,7 +29,9 @@
 #include "generated/resources/resources.h"
 
 using namespace filament;
-using namespace math;
+using namespace filamesh;
+using namespace filament::math;
+
 using Backend = Engine::Backend;
 
 struct App {
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
     FilamentApp::get().animate([&app](Engine* engine, View* view, double now) {
         auto& tcm = engine->getTransformManager();
         auto ti = tcm.getInstance(app.mesh.renderable);
-        tcm.setTransform(ti, app.transform * mat4f::rotate(now, float3{0, 1, 0}));
+        tcm.setTransform(ti, app.transform * mat4f::rotation(now, float3{ 0, 1, 0 }));
     });
 
     FilamentApp::get().run(config, setup, cleanup);

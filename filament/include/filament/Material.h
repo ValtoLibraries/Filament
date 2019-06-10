@@ -18,14 +18,13 @@
 #define TNT_FILAMENT_MATERIAL_H
 
 #include <filament/Color.h>
-#include <filament/EngineEnums.h>
 #include <filament/FilamentAPI.h>
 #include <filament/MaterialEnums.h>
 #include <filament/MaterialInstance.h>
 #include <filament/Texture.h>
 #include <filament/TextureSampler.h>
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/compiler.h>
 #include <utils/CString.h>
@@ -34,15 +33,10 @@
 
 #include <stdint.h>
 
-namespace filaflat {
-class MaterialParser;
-}
-
 namespace filament {
 namespace details {
 class  FEngine;
 class  FMaterial;
-struct ShaderGenerator;
 } // namespace details
 
 class Engine;
@@ -51,20 +45,18 @@ class UTILS_PUBLIC Material : public FilamentAPI {
     struct BuilderDetails;
 
 public:
-    using Variable = filament::Variable;
     using BlendingMode = filament::BlendingMode;
     using Shading = filament::Shading;
     using Interpolation = filament::Interpolation;
     using VertexDomain = filament::VertexDomain;
     using TransparencyMode = filament::TransparencyMode;
 
-    using ParameterType = filament::driver::UniformType;
-    using Precision = filament::driver::Precision;
-    using SamplerType = filament::driver::SamplerType;
-    using SamplerFormat = filament::driver::SamplerFormat;
-    using CullingMode = filament::driver::CullingMode;
-
-    using ShaderModel = filament::driver::ShaderModel;
+    using ParameterType = filament::backend::UniformType;
+    using Precision = filament::backend::Precision;
+    using SamplerType = filament::backend::SamplerType;
+    using SamplerFormat = filament::backend::SamplerFormat;
+    using CullingMode = filament::backend::CullingMode;
+    using ShaderModel = filament::backend::ShaderModel;
 
     /**
      * Holds information about a material parameter.
@@ -171,6 +163,15 @@ public:
     //! This values only makes sense when the shading mode is unlit.
     bool hasShadowMultiplier() const noexcept;
 
+    //! Indicates whether this material has specular anti-aliasing enabled
+    bool hasSpecularAntiAliasing() const noexcept;
+
+    //! Returns the screen-space variance for specular-antialiasing, this value is between 0 and 1.
+    float getSpecularAntiAliasingVariance() const noexcept;
+
+    //! Returns the clamping threshold for specular-antialiasing, this value is between 0 and 1.
+    float getSpecularAntiAliasingThreshold() const noexcept;
+
     //! Returns the list of vertex attributes required by this material.
     AttributeBitset getRequiredAttributes() const noexcept;
 
@@ -208,10 +209,11 @@ public:
     }
 
     /**
-     * Sets the value of the given parameter on this material's default instance.
+     * Sets a texture and sampler parameters on this material's default instance.
      *
-     * @param name The name of the material parameter
-     * @param value The value of the material parameter
+     * @param name The name of the material texture parameter
+     * @param texture The texture to set as parameter
+     * @param sampler The sampler to be used with this texture
      *
      * @see getDefaultInstance()
      */
@@ -221,10 +223,11 @@ public:
     }
 
     /**
-     * Sets the value of the given parameter on this material's default instance.
+     * Sets the color of the given parameter on this material's default instance.
      *
-     * @param name The name of the material parameter
-     * @param value The value of the material parameter
+     * @param name The name of the material color parameter
+     * @param type Whether the color is specified in the linear or sRGB space
+     * @param color The color as a floating point red, green, blue tuple
      *
      * @see getDefaultInstance()
      */
@@ -233,10 +236,11 @@ public:
     }
 
     /**
-     * Sets the value of the given parameter on this material's default instance.
+     * Sets the color of the given parameter on this material's default instance.
      *
-     * @param name The name of the material parameter
-     * @param value The value of the material parameter
+     * @param name The name of the material color parameter
+     * @param type Whether the color is specified in the linear or sRGB space
+     * @param color The color as a floating point red, green, blue, alpha tuple
      *
      * @see getDefaultInstance()
      */

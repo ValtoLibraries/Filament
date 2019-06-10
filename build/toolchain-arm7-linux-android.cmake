@@ -20,16 +20,30 @@ set(CMAKE_SYSTEM_NAME Linux)
 # this one not so much
 set(CMAKE_SYSTEM_VERSION 1)
 
+# android
+set(API_LEVEL 21)
+
 # architecture
-set(ARCH arm-linux-androideabi)
+set(ARCH armv7a-linux-androideabi)
+set(AR_ARCH arm-linux-androideabi)
 set(DIST_ARCH armeabi-v7a)
 
 # toolchain
-set(TOOLCHAIN ${CMAKE_SOURCE_DIR}/toolchains/${CMAKE_HOST_SYSTEM_NAME}/${ARCH}-4.9)
+string(TOLOWER ${CMAKE_HOST_SYSTEM_NAME} HOST_NAME_L)
+set(TOOLCHAIN $ENV{ANDROID_HOME}/ndk-bundle/toolchains/llvm/prebuilt/${HOST_NAME_L}-x86_64/)
 
 # specify the cross compiler
-set(CMAKE_C_COMPILER   ${TOOLCHAIN}/bin/${ARCH}-clang)
-set(CMAKE_CXX_COMPILER ${TOOLCHAIN}/bin/${ARCH}-clang++)
+set(COMPILER_SUFFIX)
+set(TOOL_SUFFIX)
+if(WIN32)
+    set(COMPILER_SUFFIX ".cmd")
+    set(TOOL_SUFFIX     ".exe")
+endif()
+set(CMAKE_C_COMPILER   ${TOOLCHAIN}/bin/${ARCH}${API_LEVEL}-clang${COMPILER_SUFFIX})
+set(CMAKE_CXX_COMPILER ${TOOLCHAIN}/bin/${ARCH}${API_LEVEL}-clang++${COMPILER_SUFFIX})
+set(CMAKE_AR           ${TOOLCHAIN}/bin/${AR_ARCH}-ar${TOOL_SUFFIX}  CACHE FILEPATH "Archiver")
+set(CMAKE_RANLIB       ${TOOLCHAIN}/bin/${AR_ARCH}-ranlib${TOOL_SUFFIX})
+set(CMAKE_STRIP        ${TOOLCHAIN}/bin/${AR_ARCH}-strip${TOOL_SUFFIX})
 
 # where is the target environment
 set(CMAKE_FIND_ROOT_PATH  ${TOOLCHAIN}/sysroot)
@@ -64,3 +78,9 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -march=armv7-a -Wl,-
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(ANDROID TRUE)
+
+# we are compiling Android on Windows
+set(ANDROID_ON_WINDOWS FALSE)
+if(WIN32)
+    set(ANDROID_ON_WINDOWS TRUE)
+endif()

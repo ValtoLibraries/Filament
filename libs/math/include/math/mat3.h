@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+namespace filament {
 namespace math {
 // -------------------------------------------------------------------------------------
 namespace details {
@@ -268,26 +269,19 @@ public:
             size_t storageSize = sizeof(int16_t));
 
     template <typename A>
-    static constexpr TMat33 translate(const TVec3<A>& t) {
+    static constexpr TMat33 translation(const TVec3<A>& t) {
         TMat33 r;
         r[2] = t;
         return r;
     }
 
     template <typename A>
-    static constexpr TMat33 translate(A t) {
-        TMat33 r;
-        r[2] = TVec3<T>{ t };
-        return r;
-    }
-
-    template <typename A>
-    static constexpr TMat33 scale(const TVec3<A>& s) {
+    static constexpr TMat33 scaling(const TVec3<A>& s) {
         return TMat33{ s };
     }
 
     template <typename A>
-    static constexpr TMat33 scale(A s) {
+    static constexpr TMat33 scaling(A s) {
         return TMat33{ TVec3<T>{ s } };
     }
 };
@@ -467,14 +461,15 @@ typedef details::TMat33<float> mat3f;
 
 // ----------------------------------------------------------------------------------------
 }  // namespace math
+}  // namespace filament
 
 namespace std {
 template <typename T>
-constexpr void swap(math::details::TMat33<T>& lhs, math::details::TMat33<T>& rhs) noexcept {
+constexpr void swap( filament::math::details::TMat33<T>& lhs,  filament::math::details::TMat33<T>& rhs) noexcept {
     // This generates much better code than the default implementation
     // It's unclear why, I believe this is due to an optimization bug in the clang.
     //
-    //    math::details::TMat33<T> t(lhs);
+    //     filament::math::details::TMat33<T> t(lhs);
     //    lhs = rhs;
     //    rhs = t;
     //

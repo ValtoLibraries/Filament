@@ -21,7 +21,7 @@
 #include <filament/Fence.h>
 #include <filament/SwapChain.h>
 
-#include <filament/driver/Platform.h>
+#include <backend/Platform.h>
 
 #include <utils/compiler.h>
 #include <utils/EntityManager.h>
@@ -142,11 +142,13 @@ class TransformManager;
  */
 class UTILS_PUBLIC Engine {
 public:
-    using Platform = driver::Platform;
-    using Backend = driver::Backend;
+    using Platform = backend::Platform;
+    using Backend = backend::Backend;
 
     /**
      * Creates an instance of Engine
+     *
+     * @param backend           Which driver backend to use.
      *
      * @param platform          A pointer to an object that implements Platform. If this is
      *                          provided, then this object is used to create the hardware context
@@ -169,7 +171,7 @@ public:
      *
      * @return A pointer to the newly created Engine, or nullptr if the Engine couldn't be created.
      *
-     * @error nullptr if the GPU driver couldn't be initialized, for instance if it doesn't
+     * nullptr if the GPU driver couldn't be initialized, for instance if it doesn't
      * support the right version of OpenGL or OpenGL ES.
      *
      * @exception utils::PostConditionPanic can be thrown if there isn't enough memory to
@@ -261,6 +263,23 @@ public:
     Camera* createCamera(utils::Entity entity) noexcept;
 
     /**
+     * Returns the Camera component of the given its entity.
+     *
+     * @param entity An entity.
+     * @return A pointer to the Camera component for this entity or nullptr if the entity didn't
+     *         have a Camera component. The pointer is valid until destroyCameraComponent()
+     *         (or destroyCamera()) is called or the entity itself is destroyed.
+     */
+    Camera* getCameraComponent(utils::Entity entity) noexcept;
+
+    /**
+     * Destroys the Camera component associated with the given entity.
+     *
+     * @param entity An entity.
+     */
+    void destroyCameraComponent(utils::Entity entity) noexcept;
+
+    /**
      * Creates a Fence.
      *
      * @param type Type of Fence to create
@@ -280,7 +299,7 @@ public:
      * @attention All MaterialInstance of the specified material must be destroyed before
      *            destroying a Material.
      * @exception utils::PreConditionPanic is thrown if some MaterialInstances remain.
-     * @error no-op if exceptions are disabled and some MaterialInstances remain.
+     * no-op if exceptions are disabled and some MaterialInstances remain.
      */
     void destroy(const Material* p);
     void destroy(const MaterialInstance* p);    //!< Destroys a MaterialInstance object.
@@ -302,6 +321,10 @@ public:
      */
     const Material* getDefaultMaterial() const noexcept;
 
+    /**
+     * Returns the resolved backend.
+     */
+    Backend getBackend() const noexcept;
 
     /**
      * Allocate a small amount of memory directly in the command stream. The allocated memory is
@@ -329,7 +352,9 @@ public:
     /**
      * helper for destroying the Camera component and its Entity in one call
      *
-     * @param camera Camera component to destroy. The associated entity is destroyed as well.
+     * @param camera Camera component to destroy. The associated entity as well as all its
+     *               components managed by filament are destroyed.
+     * @deprecated use destroyCameraComponent(Entity) instead
      */
     inline void destroy(const Camera* camera) {
         destroy(camera->getEntity());

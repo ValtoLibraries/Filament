@@ -18,16 +18,19 @@ Android devices and as the renderer inside the Android Studio plugin.
 
 [Download Filament releases](https://github.com/google/filament/releases) to access stable builds.
 
+Make sure you always use tools from the same release as the runtime library. This is particularly
+important for `matc` (material compiler).
+
 If you prefer to live on the edge, you can download a continuous build by clicking one of the build
 badges above.
 
 ## Documentation
 
-- [Filament](https://google.github.io/filament/Filament.md.html), an in-depth explanation of
+- [Filament](https://google.github.io/filament/Filament.html), an in-depth explanation of
   real-time physically based rendering, the graphics capabilities and implementation of Filament.
   This document explains the math and reasoning behind most of our decisions. This document is a
   good introduction to PBR for graphics programmers.
-- [Materials](https://google.github.io/filament/Materials.md.html), the full reference
+- [Materials](https://google.github.io/filament/Materials.html), the full reference
   documentation for our material system. This document explains our different material models, how
   to use the material compiler `matc` and how to write custom materials.
 - [Material Properties](https://google.github.io/filament/Material%20Properties.pdf), a reference
@@ -59,6 +62,7 @@ Here are a few sample materials rendered with Filament:
 
 - OpenGL 4.1+ for Linux, macOS and Windows
 - OpenGL ES 3.0+ for Android and iOS
+- Metal for macOS and iOS
 - Vulkan 1.0 for Android, Linux, macOS and iOS (with MoltenVk), and Windows
 - WebGL 2.0 for all platforms
 
@@ -71,23 +75,24 @@ Here are a few sample materials rendered with Filament:
 - Metallic workflow
 - Clear coat
 - Anisotropic lighting
-- Approximated translucent (subsurface) materials (direct and indirect lighting)
+- Approximated translucent (subsurface) materials
 - Cloth shading
 - Normal mapping & ambient occlusion mapping
 - Image-based lighting
 - Physically-based camera (shutter speed, sensitivity and aperture)
 - Physical light units
 - Point light, spot light and directional light
+- SSAO
 - ACES-like tone-mapping
 - Temporal dithering
-- FXAA or MSAA
+- FXAA, MSAA and specular anti-aliasing
 - Dynamic resolution (on Android)
 
 ### Future
 
 Many other features have been either prototyped or planned:
 
-- IES light profiles
+- IES light profiles/cookies
 - Area lights
 - Fog
 - Color grading
@@ -102,6 +107,7 @@ and tools.
 
 - `android`:               Android libraries and projects
   - `build`:               Custom Gradle tasks for Android builds
+  - `filamat-android`:     Filament material generation library (AAR) for Android
   - `filament-android`:    Filament library (AAR) for Android
   - `samples`:             Android-specific Filament samples
 - `art`:                   Source for various artworks (logos, PDF manuals, etc.)
@@ -120,19 +126,25 @@ and tools.
   - `filaflat`:            Serialization/deserialization library used for materials
   - `filagui`:             Helper library for [Dear ImGui](https://github.com/ocornut/imgui)
   - `filamat`:             Material generation library
-  - `filameshio`:          Tiny mesh parsing library (see also `tools/filamesh`)
+  - `filameshio`:          Tiny filamesh parsing library (see also `tools/filamesh`)
+  - `geometry`:            Mesh-related utilities
+  - `gltfio`:              Loader and optional pipeline for glTF 2.0
+  - `ibl`:                 IBL generation tools
   - `image`:               Image filtering and simple transforms
   - `imageio`:             Image file reading / writing, only intended for internal use
   - `math`:                Math library
+  - `rays`:                Simple path tracer used for baking ambient occlusion, etc.
   - `utils`:               Utility library (threads, memory, data structures, etc.)
 - `samples`:               Sample desktop applications
 - `shaders`:               Shaders used by `filamat` and `matc`
 - `third_party`:           External libraries and assets
   - `environments`:        Environment maps under CC0 license that can be used with `cmgen`
+  - `models`:              Models under permissive licenses
   - `textures`:            Textures under CC0 license
 - `tools`:                 Host tools
   - `cmgen`:               Image-based lighting asset generator
   - `filamesh`:            Mesh converter
+  - `glslminifier`:        Minifies GLSL source code
   - `matc`:                Material compiler
   - `matinfo`              Displays information about materials compiled with `matc`
   - `mipgen`               Generates a series of miplevels from a source image
@@ -149,8 +161,8 @@ and tools.
 
 To build Filament, you must first install the following tools:
 
-- CMake 3.4 (or more recent)
-- clang 5.0 (or more recent)
+- CMake 3.10 (or more recent)
+- clang 7.0 (or more recent)
 - [ninja 1.8](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages) (or more recent)
 
 To build the Java based components of the project you can optionally install (recommended):
@@ -160,11 +172,16 @@ To build the Java based components of the project you can optionally install (re
 Additional dependencies may be required for your operating system. Please refer to the appropriate
 section below.
 
+Building the `rays` library (used for light baking) is optional and requires the following packages:
+
+- embree 3.0+
+- libtbb-dev
+
 To build Filament for Android you must also install the following:
 
-- Android Studio 3.1
+- Android Studio 3.3
 - Android SDK
-- Android NDK
+- Android NDK 19 or higher
 
 ### Environment variables
 
@@ -177,7 +194,7 @@ When building for WebGL, you'll also need to set `EMSDK`. See [WebAssembly](#web
 
 ### IDE
 
-We recommend using CLion to develop for Filament. Simply open the root directory's CMakeList.txt
+We recommend using CLion to develop for Filament. Simply open the root directory's CMakeLists.txt
 in CLion to obtain a usable project.
 
 ### Easy build
@@ -225,9 +242,10 @@ If you use CMake directly instead of the build script, pass `-DENABLE_JAVA=OFF` 
 
 Make sure you've installed the following dependencies:
 
+- `clang-7` or higher
 - `libglu1-mesa-dev`
-- `libc++-dev` (`libcxx-devel` on Fedora)
-- `libc++abi-dev`
+- `libc++-7-dev` (`libcxx-devel` and `libcxx-static` on Fedora) or higher
+- `libc++abi-7-dev` (`libcxxabi-static` on Fedora) or higher
 - `ninja-build`
 - `libxi-dev`
 
@@ -243,21 +261,14 @@ $ cd out/cmake-release
 $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../release/filament ../..
 ```
 
-If you experience link errors you must ensure that you are using `libc++abi` by passing this
-extra parameter to `cmake`:
-
-```
--DFILAMENT_REQUIRES_CXXABI=true
-```
-
 Your Linux distribution might default to `gcc` instead of `clang`, if that's the case invoke
 `cmake` with the following command:
 
 ```
 $ mkdir out/cmake-release
 $ cd out/cmake-release
-# Or use a specific version of clang, for instance /usr/bin/clang-5.0
-$ CC=/usr/bin/clang CXX=/usr/bin/clang++ \
+# Or use a specific version of clang, for instance /usr/bin/clang-7
+$ CC=/usr/bin/clang CXX=/usr/bin/clang++ CXXFLAGS=-stdlib=libc++ \
     cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../release/filament ../..
 ```
 
@@ -266,10 +277,10 @@ solution is to use `update-alternatives` to both change the default compiler, an
 specific version of clang:
 
 ```
+$ update-alternatives --install /usr/bin/clang clang /usr/bin/clang-7 100
+$ update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-7 100
 $ update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
 $ update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100
-$ update-alternatives --install /usr/bin/clang clang /usr/bin/clang-5.0 100
-$ update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-5.0 100
 ```
 
 Finally, invoke `ninja`:
@@ -328,10 +339,9 @@ Install the following components:
 
 - [Windows 10 SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-10-sdk)
 - [Visual Studio 2015 or 2017](https://www.visualstudio.com/downloads)
-- [Clang 6](http://releases.llvm.org/download.html)
+- [Clang 7](http://releases.llvm.org/download.html)
 - [Python 3.7](https://www.python.org/ftp/python/3.7.0/python-3.7.0.exe)
-- [Git 2.16.1 or later](https://github.com/git-for-windows/git/releases/download/v2.16.1.windows.4/PortableGit-2.16.1.4-64-bit.7z.exe)
-- [Cmake 3.11 or later](https://cmake.org/files/v3.11/cmake-3.11.0-rc1-win64-x64.msi)
+- [Cmake 3.13 or later](https://github.com/Kitware/CMake/releases/download/v3.13.4/cmake-3.13.4-win64-x64.msi)
 
 If you're using Visual Studio 2017, you'll also need to install the [LLVM Compiler
 Toolchain](https://marketplace.visualstudio.com/items?itemName=LLVMExtensions.llvm-toolchain)
@@ -376,7 +386,7 @@ You are now ready to build:
 
 Run it:
 ```
-> samples\Release\lightbulb.exe ..\..\assets\models\monkey\monkey.obj
+> samples\Release\material_sandbox.exe ..\..\assets\models\monkey\monkey.obj
 ```
 
 #### Tips
@@ -409,7 +419,7 @@ following CMake command:
 You should then be able to build by invoking Ninja:
 
 ```
-ninja
+> ninja
 ```
 
 #### Development tips
@@ -424,7 +434,7 @@ ninja
 To confirm Filament was properly built, run the following command from the build directory:
 
 ```
-./samples/material_sandbox --ibl=../../samples/envs/pillars ../../assets/models/sphere/sphere.obj
+> samples\material_sandbox.exe --ibl=..\..\samples\envs\pillars ..\..\assets\models\sphere\sphere.obj
 ```
 
 ### Android
@@ -442,6 +452,8 @@ Filament can be built for the following architectures:
 Note that the main target is the ARM 64-bit target. Our implementation is optimized first and
 foremost for `arm64-v8a`.
 
+To build Android on Windows machines, see [android/Windows.md](android/Windows.md).
+
 #### Easy Android build
 
 The easiest way to build Filament for Android is to use `build.sh` and the
@@ -454,24 +466,6 @@ $ ./build.sh -p android release
 Run `build.sh -h` for more information.
 
 #### ARM 64-bit target (arm64-v8a)
-
-##### Linux toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch arm64 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Linux/aarch64-linux-android-4.9
-```
-
-##### Darwin toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch arm64 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Darwin/aarch64-linux-android-4.9
-```
-
-##### Compiling
 
 Then invoke CMake in a build directory of your choice, inside of filament's directory:
 
@@ -500,24 +494,6 @@ binaries should be found in `out/android-release/filament/lib/arm64-v8a`.
 
 #### ARM 32-bit target (armeabi-v7a)
 
-##### Linux toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch arm --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Linux/arm-linux-androideabi-4.9
-```
-
-##### Darwin toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch arm --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Darwin/arm-linux-androideabi-4.9
-```
-
-##### Compiling
-
 Then invoke CMake in a build directory of your choice, inside of filament's directory:
 
 ```
@@ -545,24 +521,6 @@ binaries should be found in `out/android-release/filament/lib/armeabi-v7a`.
 
 #### Intel 64-bit target (x86_64)
 
-##### Linux toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch x86_64 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Linux/x86_64-linux-android-4.9
-```
-
-##### Darwin toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch x86_64 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Darwin/x86_64-linux-android-4.9
-```
-
-##### Compiling
-
 Then invoke CMake in a build directory of your choice, sibling of filament's directory:
 
 ```
@@ -589,24 +547,6 @@ to build the Android Studio projects located in `filament/android`. After instal
 binaries should be found in `out/android-release/filament/lib/x86_64`.
 
 #### Intel 32-bit target (x86)
-
-##### Linux toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch x86 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Linux/i686-linux-android-4.9
-```
-
-##### Darwin toolchain
-
-```
-$ $SDK/ndk-bundle/build/tools/make_standalone_toolchain.py --arch x86 --api 21 \
-        --stl libc++ --force \
-        --install-dir toolchains/Darwin/i686-linux-android-4.9
-```
-
-##### Compiling
 
 Then invoke CMake in a build directory of your choice, sibling of filament's directory:
 
@@ -717,13 +657,13 @@ same version that our continuous builds use.
 
 ```
 cd <your chosen parent folder for the emscripten SDK>
-curl -L https://github.com/juj/emsdk/archive/0d8576c.zip > emsdk.zip
+curl -L https://github.com/emscripten-core/emsdk/archive/a77638d.zip > emsdk.zip
 unzip emsdk.zip
 mv emsdk-* emsdk
 cd emsdk
 ./emsdk update
-./emsdk install sdk-1.38.11-64bit
-./emsdk activate sdk-1.38.11-64bit
+./emsdk install sdk-1.38.28-64bit
+./emsdk activate sdk-1.38.28-64bit
 ```
 
 After this you can invoke the [easy build](#easy-build) script as follows:
@@ -791,7 +731,7 @@ value is the desired roughness between 0 and 1.
 ### Native Linux, macOS and Windows
 
 You must create an `Engine`, a `Renderer` and a `SwapChain`. The `SwapChain` is created from a
-native window pointer (an `NSView` on macOS or a `HDC` on Windows for instance):
+native window pointer (an `NSView` on macOS or a `HWND` on Windows for instance):
 
 ```c++
 Engine* engine = Engine::create();
@@ -890,7 +830,8 @@ MoltenVK.
 
 ## Generating C++ documentation
 
-To generate the documentation you must first install `doxygen`, then run the following commands:
+To generate the documentation you must first install `doxygen` and `graphviz`, then run the 
+following commands:
 
 ```
 $ cd filament/filament

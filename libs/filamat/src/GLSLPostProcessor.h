@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include "filamat/MaterialBuilder.h"    // for MaterialBuilder:: enums
 
@@ -30,31 +30,33 @@
 
 namespace filamat {
 
+using SpirvBlob = std::vector<uint32_t>;
+
 class GLSLPostProcessor {
 public:
     GLSLPostProcessor(MaterialBuilder::Optimization optimization, bool printShaders);
 
     ~GLSLPostProcessor();
 
-    using SpirvBlob = std::vector<uint32_t>;
-
-    bool process(const std::string& inputShader, filament::driver::ShaderType shaderType,
-            filament::driver::ShaderModel shaderModel, std::string* outputGlsl,
-            SpirvBlob* outputSpirv);
+    bool process(const std::string& inputShader, filament::backend::ShaderType shaderType,
+            filament::backend::ShaderModel shaderModel, std::string* outputGlsl,
+            SpirvBlob* outputSpirv, std::string* outputMsl);
 
 private:
+
     void fullOptimization(const glslang::TShader& tShader,
-            filament::driver::ShaderModel shaderModel) const;
+            filament::backend::ShaderModel shaderModel) const;
     void preprocessOptimization(glslang::TShader& tShader,
-            filament::driver::ShaderModel shaderModel) const;
+            filament::backend::ShaderModel shaderModel) const;
 
     void registerSizePasses(spvtools::Optimizer& optimizer) const;
     void registerPerformancePasses(spvtools::Optimizer& optimizer) const;
 
-    const filamat::MaterialBuilder::Optimization mOptimization;
+    const MaterialBuilder::Optimization mOptimization;
     const bool mPrintShaders;
     std::string* mGlslOutput = nullptr;
     SpirvBlob* mSpirvOutput = nullptr;
+    std::string* mMslOutput = nullptr;
     EShLanguage mShLang = EShLangFragment;
     int mLangVersion = 0;
 };

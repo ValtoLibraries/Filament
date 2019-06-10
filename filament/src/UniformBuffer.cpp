@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-using namespace math;
+using namespace filament::math;
 
 namespace filament {
 
@@ -31,10 +31,6 @@ UniformBuffer::UniformBuffer(size_t size) noexcept
         mBuffer = UniformBuffer::alloc(size);
     }
     memset(mBuffer, 0, size);
-}
-
-UniformBuffer::UniformBuffer(UniformInterfaceBlock const& uib) noexcept
-        : UniformBuffer(uib.getSize()) {
 }
 
 UniformBuffer::UniformBuffer(UniformBuffer&& rhs) noexcept
@@ -60,6 +56,27 @@ UniformBuffer& UniformBuffer::operator=(UniformBuffer&& rhs) noexcept {
             std::swap(mBuffer, rhs.mBuffer);
             std::swap(mSize, rhs.mSize);
         }
+    }
+    return *this;
+}
+
+UniformBuffer& UniformBuffer::setUniforms(const UniformBuffer& rhs) noexcept {
+    if (this != &rhs) {
+        if (UTILS_UNLIKELY(mSize != rhs.mSize)) {
+            // first free our storage if any
+            if (mBuffer && !isLocalStorage()) {
+                UniformBuffer::free(mBuffer, mSize);
+            }
+            // and allocate new storage
+            mBuffer = mStorage;
+            mSize = rhs.mSize;
+            if (mSize > sizeof(mStorage)) {
+                mBuffer = UniformBuffer::alloc(mSize);
+            }
+        }
+        memcpy(mBuffer, rhs.mBuffer, rhs.mSize);
+        // always invalidate ourselves
+        invalidate();
     }
     return *this;
 }

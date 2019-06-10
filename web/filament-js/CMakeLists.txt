@@ -20,7 +20,6 @@ set(COPTS "${COPTS} -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0")
 # set(LOPTS "${LOPTS} --memoryprofiler")
 
 set(LOPTS "${LOPTS} --bind")
-set(LOPTS "${LOPTS} -s FILESYSTEM=0")
 set(LOPTS "${LOPTS} -s ALLOW_MEMORY_GROWTH=1")
 set(LOPTS "${LOPTS} -s MODULARIZE_INSTANCE=1")
 set(LOPTS "${LOPTS} -s EXPORT_NAME=Filament")
@@ -38,7 +37,7 @@ set_target_properties(filament-js PROPERTIES
     LINK_DEPENDS "${JAVASCRIPT_SRC}"
     OUTPUT_NAME filament)
 
-target_link_libraries(filament-js PRIVATE filament math utils image filameshio stb)
+target_link_libraries(filament-js PRIVATE filament math utils image filameshio gltfio_core stb)
 
 # Copy package.json (et al) into the output folder to allow "npm publish" to gather the
 # artifacts that it needs.

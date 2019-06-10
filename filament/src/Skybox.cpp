@@ -26,13 +26,13 @@
 #include "FilamentAPI-impl.h"
 
 #include <filament/MaterialInstance.h>
-#include <filament/driver/DriverEnums.h>
+#include <backend/DriverEnums.h>
 
 #include <utils/Panic.h>
 
 #include "generated/resources/materials.h"
 
-using namespace math;
+using namespace filament::math;
 namespace filament {
 
 using namespace details;

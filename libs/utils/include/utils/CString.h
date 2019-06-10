@@ -200,7 +200,8 @@ public:
 
     CString() noexcept = default;
 
-    CString(const char* cstr, size_type length);
+    // cstr must be a null terminated string and length == strlen(cstr)
+    CString(const char* cstr, size_t length);
 
     template<size_t N>
     explicit CString(StringLiteral<N> const& other) noexcept // NOLINT(google-explicit-constructor)

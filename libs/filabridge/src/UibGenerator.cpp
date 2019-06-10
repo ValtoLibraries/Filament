@@ -18,12 +18,12 @@
 
 #include "private/filament/UniformInterfaceBlock.h"
 
-#include <filament/EngineEnums.h>
-#include <filament/driver/DriverEnums.h>
+#include <private/filament/EngineEnums.h>
+#include <backend/DriverEnums.h>
 
 namespace filament {
 
-using namespace driver;
+using namespace backend;
 
 static_assert(sizeof(PerRenderableUib) % 256 == 0,
         "sizeof(Transform) should be a multiple of 256");
@@ -42,6 +42,7 @@ UniformInterfaceBlock const& UibGenerator::getPerViewUib() noexcept  {
             .add("clipFromViewMatrix",      1, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
             .add("viewFromClipMatrix",      1, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
             .add("clipFromWorldMatrix",     1, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
+            .add("worldFromClipMatrix",     1, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
             .add("lightFromWorldMatrix",    1, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
             // view
             .add("resolution",              1, UniformInterfaceBlock::Type::FLOAT4, Precision::HIGH)
@@ -96,9 +97,10 @@ UniformInterfaceBlock const& UibGenerator::getLightsUib() noexcept {
 UniformInterfaceBlock const& UibGenerator::getPostProcessingUib() noexcept {
     static UniformInterfaceBlock uib =  UniformInterfaceBlock::Builder()
             .name("PostProcessUniforms")
-            .add("uvScale", 1, UniformInterfaceBlock::Type::FLOAT2)
-            .add("time",    1, UniformInterfaceBlock::Type::FLOAT)
-            .add("yOffset", 1, UniformInterfaceBlock::Type::FLOAT)
+            .add("uvScale",   1, UniformInterfaceBlock::Type::FLOAT2)
+            .add("time",      1, UniformInterfaceBlock::Type::FLOAT)
+            .add("yOffset",   1, UniformInterfaceBlock::Type::FLOAT)
+            .add("dithering", 1, UniformInterfaceBlock::Type::INT)
             .build();
     return uib;
 }

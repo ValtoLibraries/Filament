@@ -42,10 +42,10 @@
 #include "UniformBuffer.h"
 
 using namespace filament;
-using namespace math;
+using namespace filament::math;
 using namespace utils;
 
-static bool isGray(math::float3 v) {
+static bool isGray(float3 v) {
     return v.r == v.g && v.g == v.b;
 }
 
@@ -55,7 +55,7 @@ static bool almostEqualUlps(float a, float b, int maxUlps) {
     return intDiff <= maxUlps;
 }
 
-static bool vec3eq(math::float3 a, math::float3 b) {
+static bool vec3eq(float3 a, float3 b) {
     return  almostEqualUlps(a.x, b.x, 1) &&
             almostEqualUlps(a.y, b.y, 1) &&
             almostEqualUlps(a.z, b.z, 1);
@@ -424,10 +424,9 @@ TEST(FilamentTest, ColorConversion) {
     EXPECT_PRED2(vec3eq, (sRGBColor{1.0f, 0.0f, 0.0f}),
             Color::toSRGB<ACCURATE>({1.0f, 0.0f, 0.0f}));
 
-    // 0.5 is > 0.5
-    EXPECT_LT((sRGBColor{0.5f, 0.0f, 0.0f}), Color::toSRGB<FAST>({0.5f, 0.0f, 0.0f}));
-    // 0.5 is > 0.5
-    EXPECT_LT((sRGBColor{0.5f, 0.0f, 0.0f}), Color::toSRGB<ACCURATE>({0.5f, 0.0f, 0.0f}));
+    EXPECT_LT((sRGBColor{0.5f, 0.0f, 0.0f}.x), Color::toSRGB<FAST>({0.5f, 0.0f, 0.0f}).x);
+
+    EXPECT_LT((sRGBColor{0.5f, 0.0f, 0.0f}.x), Color::toSRGB<ACCURATE>({0.5f, 0.0f, 0.0f}).x);
 
     EXPECT_PRED1(isGray, Color::toSRGB<FAST>(LinearColor{0.5f}));
     EXPECT_PRED1(isGray, Color::toSRGB<ACCURATE>(LinearColor{0.5f}));
@@ -443,10 +442,10 @@ TEST(FilamentTest, ColorConversion) {
     // 1.0 stays 1.0
     EXPECT_PRED2(vec3eq, (LinearColor{1.0f, 0.0f, 0.0f}), Color::toLinear<ACCURATE>({1.0f, 0.0f, 0.0f}));
 
-    // 0.5 is < 0.5
-    EXPECT_GT((LinearColor{0.5f, 0.0f, 0.0f}), Color::toLinear<FAST>({0.5f, 0.0f, 0.0f}));
-    // 0.5 is < 0.5
-    EXPECT_GT((LinearColor{0.5f, 0.0f, 0.0f}), Color::toLinear<ACCURATE>({0.5f, 0.0f, 0.0f}));
+
+    EXPECT_GT((LinearColor{0.5f, 0.0f, 0.0f}.x), Color::toLinear<FAST>({0.5f, 0.0f, 0.0f}).x);
+
+    EXPECT_GT((LinearColor{0.5f, 0.0f, 0.0f}.x), Color::toLinear<ACCURATE>({0.5f, 0.0f, 0.0f}).x);
 
     EXPECT_PRED1(isGray, Color::toLinear<FAST>(sRGBColor{0.5f}));
     EXPECT_PRED1(isGray, Color::toLinear<ACCURATE>(sRGBColor{0.5f}));
@@ -567,13 +566,13 @@ TEST(FilamentTest, Bones) {
         static mat3f normal(PerRenderableUibBone const& bone) noexcept {
             quatf q = bone.q;
             float3 is = bone.ns.xyz;
-            return mat3f(mat3(q) * mat3::scale(is));
+            return mat3f(mat3(q) * mat3::scaling(is));
         }
         static  mat4f vertice(PerRenderableUibBone const& bone) noexcept {
             quatf q = bone.q;
             float3 t = bone.t.xyz;
             float3 s = bone.s.xyz;
-            return mat4f(mat4::translate(t) * mat4(q) * mat4::scale(s));
+            return mat4f(mat4::translation(t) * mat4(q) * mat4::scaling(s));
         }
         static float3 normal(float3 n, PerRenderableUibBone const& bone) noexcept {
             quatf q = bone.q;
@@ -651,36 +650,36 @@ TEST(FilamentTest, Bones) {
     };
 
     Test::check(mat4f{});
-    Test::check(mat4f::translate(float3{1,2,3}));
+    Test::check(mat4f::translation(float3{ 1, 2, 3 }));
 
-    Test::check(mat4f::scale(float3{2,2,2}));
+    Test::check(mat4f::scaling(float3{ 2, 2, 2 }));
 
-    Test::check(mat4f::scale(float3{4,2,3}));
-    Test::check(mat4f::scale(float3{4,-2,-3}));
-    Test::check(mat4f::scale(float3{-4,2,-3}));
-    Test::check(mat4f::scale(float3{-4,-2,3}));
+    Test::check(mat4f::scaling(float3{ 4, 2, 3 }));
+    Test::check(mat4f::scaling(float3{ 4, -2, -3 }));
+    Test::check(mat4f::scaling(float3{ -4, 2, -3 }));
+    Test::check(mat4f::scaling(float3{ -4, -2, 3 }));
 
-    Test::check(mat4f::scale(float3{-4,-2,-3}));
-    Test::check(mat4f::scale(float3{-4,2,3}));
-    Test::check(mat4f::scale(float3{4,-2,3}));
-    Test::check(mat4f::scale(float3{4,2,-3}));
+    Test::check(mat4f::scaling(float3{ -4, -2, -3 }));
+    Test::check(mat4f::scaling(float3{ -4, 2, 3 }));
+    Test::check(mat4f::scaling(float3{ 4, -2, 3 }));
+    Test::check(mat4f::scaling(float3{ 4, 2, -3 }));
 
-    Test::check(mat4f::rotate(M_PI_2, float3{0,0,1}));
-    Test::check(mat4f::rotate(M_PI_2, float3{0,1,0}));
-    Test::check(mat4f::rotate(M_PI_2, float3{1,0,0}));
-    Test::check(mat4f::rotate(M_PI_2, float3{0,1,1}));
-    Test::check(mat4f::rotate(M_PI_2, float3{1,0,1}));
-    Test::check(mat4f::rotate(M_PI_2, float3{1,1,0}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{0,0,1}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{0,1,0}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{1,0,0}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{0,1,1}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{1,0,1}));
-    Test::check(mat4f::rotate(-M_PI_2, float3{1,1,0}));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 0, 0, 1 }));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 0, 1, 0 }));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 1, 0, 0 }));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 0, 1, 1 }));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 1, 0, 1 }));
+    Test::check(mat4f::rotation(M_PI_2, float3{ 1, 1, 0 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 0, 0, 1 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 0, 1, 0 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 1, 0, 0 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 0, 1, 1 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 1, 0, 1 }));
+    Test::check(mat4f::rotation(-M_PI_2, float3{ 1, 1, 0 }));
 
-    mat4f m = mat4f::translate(float3{1,2,3}) *
-              mat4f::rotate(-M_PI_2, float3{1,1,0}) *
-              mat4f::scale(float3{-2,3,0.04});
+    mat4f m = mat4f::translation(float3{ 1, 2, 3 }) *
+                                                    mat4f::rotation(-M_PI_2, float3{ 1, 1, 0 }) *
+                                                    mat4f::scaling(float3{ -2, 3, 0.04 });
 
     Test::check(m);
 

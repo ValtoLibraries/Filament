@@ -25,6 +25,7 @@
 #include <type_traits>
 
 
+namespace filament {
 namespace math {
 // -------------------------------------------------------------------------------------
 
@@ -72,14 +73,13 @@ public:
     constexpr TVec2() = default;
 
     // handles implicit conversion to a tvec4. must not be explicit.
-    template<typename A, typename = typename std::enable_if<std::is_arithmetic<A>::value >::type>
+    template<typename A>
     constexpr TVec2(A v) : x(v), y(v) { }
 
     template<typename A, typename B>
     constexpr TVec2(A x, B y) : x(x), y(y) { }
 
     template<typename A>
-    explicit
     constexpr TVec2(const TVec2<A>& v) : x(v.x), y(v.y) { }
 
     // cross product works only on vectors of size 2 or 3
@@ -94,18 +94,22 @@ public:
 
 // ----------------------------------------------------------------------------------------
 
-typedef details::TVec2<double> double2;
-typedef details::TVec2<float> float2;
-typedef details::TVec2<half> half2;
-typedef details::TVec2<int32_t> int2;
-typedef details::TVec2<uint32_t> uint2;
-typedef details::TVec2<int16_t> short2;
-typedef details::TVec2<uint16_t> ushort2;
-typedef details::TVec2<int8_t> byte2;
-typedef details::TVec2<uint8_t> ubyte2;
-typedef details::TVec2<bool> bool2;
+template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value >::type>
+using vec2 = details::TVec2<T>;
+
+using double2 = vec2<double>;
+using float2 = vec2<float>;
+using half2 = vec2<half>;
+using int2 = vec2<int32_t>;
+using uint2 = vec2<uint32_t>;
+using short2 = vec2<int16_t>;
+using ushort2 = vec2<uint16_t>;
+using byte2 = vec2<int8_t>;
+using ubyte2 = vec2<uint8_t>;
+using bool2 = vec2<bool>;
 
 // ----------------------------------------------------------------------------------------
 }  // namespace math
+}  // namespace filament
 
 #endif  // MATH_VEC2_H_

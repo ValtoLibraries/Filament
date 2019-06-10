@@ -19,7 +19,7 @@
 
 #include "upcast.h"
 
-#include "driver/Handle.h"
+#include <backend/Handle.h>
 
 #include <filament/Texture.h>
 
@@ -42,7 +42,7 @@ public:
     // frees driver resources, object becomes invalid
     void terminate(FEngine& engine);
 
-    Handle<HwTexture> getHwHandle() const noexcept { return mHandle; }
+    backend::Handle<backend::HwTexture> getHwHandle() const noexcept { return mHandle; }
 
     size_t getWidth(size_t level = 0) const noexcept;
     size_t getHeight(size_t level = 0) const noexcept;
@@ -74,9 +74,13 @@ public:
 
     static size_t getFormatSize(InternalFormat format) noexcept;
 
+    static inline size_t valueForLevel(size_t level, size_t value) {
+        return std::max(size_t(1), value >> level);
+    }
+
 private:
     friend class Texture;
-    Handle<HwTexture> mHandle;
+    backend::Handle<backend::HwTexture> mHandle;
     uint32_t mWidth = 1;
     uint32_t mHeight = 1;
     uint32_t mDepth = 1;

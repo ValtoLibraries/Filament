@@ -44,14 +44,15 @@
 #include <filamat/MaterialBuilder.h>
 #include <filameshio/MeshReader.h>
 
-using namespace math;
+using namespace filament::math;
 using namespace filament;
+using namespace filamesh;
 using namespace filamat;
 using namespace utils;
 
 static std::vector<Path> g_filenames;
 
-static std::map<std::string, MaterialInstance*> g_materialInstances;
+static MeshReader::MaterialRegistry g_materialInstances;
 static std::vector<MeshReader::Mesh> g_meshes;
 static const Material* g_material;
 static Entity g_light;
@@ -149,9 +150,12 @@ static int handleCommandLineArgments(int argc, char* argv[], Config* config) {
 static void cleanup(Engine* engine, View*, Scene*) {
     engine->destroy(g_normalMap);
     engine->destroy(g_clearCoatNormalMap);
-    for (auto material : g_materialInstances) {
-        engine->destroy(material.second);
+    std::vector<filament::MaterialInstance*> materialList(g_materialInstances.numRegistered());
+    g_materialInstances.getRegisteredMaterials(materialList.data());
+    for (auto material : materialList) {
+        engine->destroy(material);
     }
+    g_materialInstances.unregisterAll();
     engine->destroy(g_material);
     EntityManager& em = EntityManager::get();
     for (auto mesh : g_meshes) {
@@ -175,11 +179,11 @@ void loadNormalMap(Engine* engine, Texture** normalMap, const std::string& path)
                         .width(uint32_t(w))
                         .height(uint32_t(h))
                         .levels(0xff)
-                        .format(driver::TextureFormat::RGB8)
+                        .format(Texture::InternalFormat::RGB8)
                         .build(*engine);
                 Texture::PixelBufferDescriptor buffer(data, size_t(w * h * 3),
                         Texture::Format::RGB, Texture::Type::UBYTE,
-                        (driver::BufferDescriptor::Callback)&stbi_image_free);
+                        (Texture::PixelBufferDescriptor::Callback)&stbi_image_free);
                 (*normalMap)->setImage(*engine, 0, std::move(buffer));
                 (*normalMap)->generateMipmaps(*engine);
             } else {
@@ -202,11 +206,11 @@ void loadBaseColorMap(Engine* engine) {
                         .width(uint32_t(w))
                         .height(uint32_t(h))
                         .levels(0xff)
-                        .format(driver::TextureFormat::SRGB8)
+                        .format(Texture::InternalFormat::SRGB8)
                         .build(*engine);
                 Texture::PixelBufferDescriptor buffer(data, size_t(w * h * 3),
                         Texture::Format::RGB, Texture::Type::UBYTE,
-                        (driver::BufferDescriptor::Callback)&stbi_image_free);
+                        (Texture::PixelBufferDescriptor::Callback)&stbi_image_free);
                 g_baseColorMap->setImage(*engine, 0, std::move(buffer));
                 g_baseColorMap->generateMipmaps(*engine);
             } else {
@@ -229,14 +233,23 @@ static void setup(Engine* engine, View*, Scene* scene) {
 
     std::string shader = R"SHADER(
         void material(inout MaterialInputs material) {
-        #if defined(MATERIAL_HAS_NORMAL)
+    )SHADER";
+
+    if (hasNormalMap) {
+        shader += R"SHADER(
             material.normal = texture(materialParams_normalMap, getUV0()).xyz * 2.0 - 1.0;
-        #endif
-        #if defined(MATERIAL_HAS_CLEAR_COAT_NORMAL)
+        )SHADER";
+    }
+
+    if (hasClearCoatNormalMap) {
+        shader += R"SHADER(
             material.clearCoatNormal =
                     texture(materialParams_clearCoatNormalMap, getUV0()).xyz * 2.0 - 1.0;
-        #endif
-            prepareMaterial(material);
+        )SHADER";
+    }
+
+    shader += R"SHADER(
+        prepareMaterial(material);
     )SHADER";
 
     if (hasBaseColorMap) {
@@ -247,9 +260,9 @@ static void setup(Engine* engine, View*, Scene* scene) {
         )SHADER";
     } else {
         shader += R"SHADER(
-            material.baseColor.rgb = float3(0.48, 0.0, 0.0);
-            material.metallic = 1.0;
-            material.roughness = 0.7;
+            material.baseColor.rgb = float3(0.3, 0.0, 0.0);
+            material.metallic = 0.0;
+            material.roughness = 0.0;
         )SHADER";
     }
 
@@ -259,9 +272,11 @@ static void setup(Engine* engine, View*, Scene* scene) {
 
     shader += "}\n";
 
+    MaterialBuilder::init();
     MaterialBuilder builder = MaterialBuilder()
             .name("DefaultMaterial")
             .material(shader.c_str())
+            .specularAntiAliasing(true)
             .shading(Shading::LIT);
 
     if (hasNormalMap) {
@@ -286,21 +301,22 @@ static void setup(Engine* engine, View*, Scene* scene) {
 
     g_material = Material::Builder().package(pkg.getData(), pkg.getSize())
             .build(*engine);
-    g_materialInstances["DefaultMaterial"] = g_material->createInstance();
+    const utils::CString defaultMaterialName("DefaultMaterial");
+    g_materialInstances.registerMaterialInstance(defaultMaterialName, g_material->createInstance());
 
     TextureSampler sampler(TextureSampler::MinFilter::LINEAR_MIPMAP_LINEAR,
             TextureSampler::MagFilter::LINEAR, TextureSampler::WrapMode::REPEAT);
     sampler.setAnisotropy(8.0f);
 
     if (hasNormalMap) {
-        g_materialInstances["DefaultMaterial"]->setParameter("normalMap", g_normalMap, sampler);
+        g_materialInstances.getMaterialInstance(defaultMaterialName)->setParameter("normalMap", g_normalMap, sampler);
     }
     if (hasClearCoatNormalMap) {
-        g_materialInstances["DefaultMaterial"]->setParameter(
+        g_materialInstances.getMaterialInstance(defaultMaterialName)->setParameter(
                 "clearCoatNormalMap", g_clearCoatNormalMap, sampler);
     }
     if (hasBaseColorMap) {
-        g_materialInstances["DefaultMaterial"]->setParameter(
+        g_materialInstances.getMaterialInstance(defaultMaterialName)->setParameter(
                 "baseColorMap", g_baseColorMap, sampler);
     }
 
@@ -336,7 +352,7 @@ int main(int argc, char* argv[]) {
     for (int i = option_index; i < argc; i++) {
         utils::Path filename = argv[i];
         if (!filename.exists()) {
-            std::cerr << "file " << argv[option_index] << " not found!" << std::endl;
+            std::cerr << "file " << argv[i] << " not found!" << std::endl;
             return 1;
         }
         g_filenames.push_back(filename);

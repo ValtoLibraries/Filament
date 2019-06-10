@@ -63,7 +63,7 @@ class UTILS_PUBLIC Scene : public FilamentAPI {
 public:
 
     /**
-     * Set the SkyBox,
+     * Sets the SkyBox.
      *
      * The Skybox is drawn last and covers all pixels not touched by geometry.
      *
@@ -94,6 +94,14 @@ public:
     void addEntity(utils::Entity entity);
 
     /**
+     * Adds a contiguous list of entities to the Scene.
+     *
+     * @param entities Array containing entities to add to the scene.
+     * @param count Size of the entity array.
+     */
+    void addEntities(const utils::Entity* entities, size_t count);
+
+    /**
      * Removes the Renderable from the Scene.
      *
      * @param entity The Entity to remove from the Scene. If the specified
@@ -114,6 +122,13 @@ public:
      * @return The total number of Light objects in the Scene.
      */
     size_t getLightCount() const noexcept;
+
+    /**
+     * Returns true if the given entity is in the Scene.
+     *
+     * @return Whether the given entity is in the Scene.
+     */
+    bool hasEntity(utils::Entity entity) const noexcept;
 };
 
 } // namespace filament

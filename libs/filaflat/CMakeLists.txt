@@ -11,12 +11,9 @@ file(GLOB_RECURSE HDRS include/filaflat/*.h)
 
 set(SRCS
         src/ChunkContainer.cpp
-        src/ChunkInterfaceBlock.cpp
-        src/TextDictionaryReader.cpp
-        src/SpirvDictionaryReader.cpp
+        src/DictionaryReader.cpp
         src/MaterialChunk.cpp
         src/ShaderBuilder.cpp
-        src/MaterialParser.cpp
         src/Unflattener.cpp)
 
 # ==================================================================================================
@@ -27,7 +24,7 @@ include_directories(${PUBLIC_HDR_DIR})
 add_library(${TARGET} ${HDRS} ${SRCS})
 target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 
-target_link_libraries(${TARGET} filabridge utils)
+target_link_libraries(${TARGET} filabridge backend utils)
 
 if (FILAMENT_SUPPORTS_VULKAN)
     target_link_libraries(${TARGET} smol-v)

@@ -22,9 +22,9 @@ using namespace filament;
 using namespace utils;
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_google_android_filament_Engine_nCreateEngine(JNIEnv*, jclass,
+Java_com_google_android_filament_Engine_nCreateEngine(JNIEnv*, jclass, jlong backend,
         jlong sharedContext) {
-    return (jlong) Engine::create(Engine::Backend::OPENGL, nullptr, (void*) sharedContext);
+    return (jlong) Engine::create((Engine::Backend) backend, nullptr, (void*) sharedContext);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -42,6 +42,13 @@ extern "C" {
 // folder filament/src/driver/opengl/Context* in particular pay attention to
 // the object type in makeCurrent method.
 extern void *getNativeWindow(JNIEnv *env, jclass, jobject surface);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_google_android_filament_Engine_nGetBackend(JNIEnv* env,
+        jclass klass, jlong nativeEngine) {
+    Engine* engine = (Engine*) nativeEngine;
+    return (jlong) engine->getBackend();
 }
 
 extern "C" JNIEXPORT jlong JNICALL

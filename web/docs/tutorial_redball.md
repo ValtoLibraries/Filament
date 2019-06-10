@@ -144,7 +144,7 @@ const material = engine.createMaterial(filamat_url);
 const matinstance = material.createInstance();
 
 const red = [0.8, 0.0, 0.0];
-matinstance.setColorParameter('baseColor', Filament.RgbType.sRGB, red);
+matinstance.setColor3Parameter('baseColor', Filament.RgbType.sRGB, red);
 matinstance.setFloatParameter('roughness', 0.5);
 matinstance.setFloatParameter('clearCoat', 1.0);
 matinstance.setFloatParameter('clearCoatRoughness', 0.3);
@@ -186,7 +186,7 @@ vb.setBufferAt(engine, 1, icosphere.tangents);
 ib.setBuffer(engine, icosphere.triangles);
 
 Filament.RenderableManager.Builder(1)
-  .boundingBox([ [-1, -1, -1], [1, 1, 1] ])
+  .boundingBox({ center: [-1, -1, -1], halfExtent: [1, 1, 1] })
   .material(0, matinstance)
   .geometry(0, PrimitiveType.TRIANGLES, vb, ib)
   .build(engine, renderable);

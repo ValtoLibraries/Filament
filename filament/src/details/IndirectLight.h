@@ -19,7 +19,7 @@
 
 #include "upcast.h"
 
-#include "driver/Handle.h"
+#include <backend/Handle.h>
 
 #include <filament/IndirectLight.h>
 
@@ -40,8 +40,8 @@ public:
 
     void terminate(FEngine& engine);
 
-    Handle<HwTexture> getReflectionMap() const noexcept { return mReflectionsMapHandle; }
-    Handle<HwTexture> getIrradianceMap() const noexcept { return mIrradianceMapHandle; }
+    backend::Handle<backend::HwTexture> getReflectionMap() const noexcept { return mReflectionsMapHandle; }
+    backend::Handle<backend::HwTexture> getIrradianceMap() const noexcept { return mIrradianceMapHandle; }
     math::float3 const* getSH() const noexcept{ return mIrradianceCoefs.data(); }
     float getIntensity() const noexcept { return mIntensity; }
     void setIntensity(float intensity) noexcept { mIntensity = intensity; }
@@ -49,8 +49,8 @@ public:
     const math::mat3f& getRotation() const { return mRotation; }
 
 private:
-    Handle<HwTexture> mReflectionsMapHandle;
-    Handle<HwTexture> mIrradianceMapHandle;
+    backend::Handle<backend::HwTexture> mReflectionsMapHandle;
+    backend::Handle<backend::HwTexture> mIrradianceMapHandle;
     std::array<math::float3, 9> mIrradianceCoefs;
     float mIntensity = DEFAULT_INTENSITY;
     math::mat3f mRotation;
